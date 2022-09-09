@@ -16,16 +16,7 @@ pub struct Redis {
 
 #[pymethods]
 impl Redis {
-    // __init__
-    // [x] reopen
-    // [x] close
-    // [x] insert_dict
-    // [x] insert_dict_list
-    // [x] select
-    // [x] update
-    // delete
-    // [x] is_open
-
+    /// Initializes Redis
     #[new]
     pub fn new(url: Py<PyAny>) -> PyResult<Self> {
         Python::with_gil(|py| -> PyResult<Redis> {
@@ -40,6 +31,7 @@ impl Redis {
         })
     }
 
+    /// Inserts a python dict object into redis in the given virtual table, with the given life span
     #[args(table, key, data, life_span = "None")]
     #[pyo3(text_signature = "($self, table, key, data, lifespan)")]
     pub(crate) fn insert_dict(
@@ -64,6 +56,7 @@ impl Redis {
         }
     }
 
+    /// Inserts multiple dicts in redis in the given virtual table
     #[args(table, key, data, life_span = "None")]
     #[pyo3(text_signature = "($self, table, key, data, lifespan)")]
     pub(crate) fn insert_dict_list(
@@ -96,6 +89,7 @@ impl Redis {
         }
     }
 
+    /// Selects the given ids or if none is given, all ids are selected for the given virtual table
     #[args(table, ids = "None", columns = "None")]
     #[pyo3(text_signature = "($self, table, ids, columns)")]
     pub(crate) fn select(
@@ -188,6 +182,7 @@ impl Redis {
         }
     }
 
+    /// Updates the record of the given key in the given virtual table
     #[args(table, key, data, life_span = "None")]
     #[pyo3(text_signature = "($self, table, key, data, lifespan)")]
     pub(crate) fn update(
@@ -200,6 +195,31 @@ impl Redis {
         self.insert_dict(table, key, data, life_span)
     }
 
+    /// Deletes the records of the given ids from the given virtual table in redis
+    #[args(table, ids)]
+    #[pyo3(text_signature = "($self, table, ids)")]
+    pub(crate) fn delete(&mut self, table: &str, ids: Vec<String>) -> PyResult<()> {
+        let conn = self.conn.as_mut();
+        match conn {
+            None => Err(PyConnectionError::new_err("redis server disconnected")),
+            Some(conn) => run_in_transaction(conn, |pipe| {
+                let table_index = get_table_index(table);
+                let keys: Vec<String> = ids
+                    .into_iter()
+                    .map(|k| get_primary_key(table, &k))
+                    .collect();
+
+                Python::with_gil(|py| {
+                    pipe.del(&keys);
+                    pipe.srem(table_index, &keys);
+                    Ok(())
+                })
+            }),
+        }
+    }
+
+    /// Checks to see if redis is still connected
+    #[pyo3(text_signature = "($self)")]
     pub fn is_open(&self) -> PyResult<bool> {
         match &self.conn {
             None => Ok(false),
@@ -207,6 +227,8 @@ impl Redis {
         }
     }
 
+    /// Closes the connection to redis
+    #[pyo3(text_signature = "($self)")]
     pub fn close(&mut self) -> PyResult<()> {
         if let Some(conn) = self.conn.take() {
             drop(conn);
@@ -215,6 +237,8 @@ impl Redis {
         Ok(())
     }
 
+    /// Reopens the connection to redis
+    #[pyo3(text_signature = "($self)")]
     pub fn reopen(&mut self) -> PyResult<()> {
         match self.conn {
             None => {
@@ -227,6 +251,7 @@ impl Redis {
         }
     }
 
+    /// The string representation of this class in python
     pub fn __str__(&self) -> PyResult<String> {
         Ok(format!("{:?}", self))
     }
@@ -238,7 +263,8 @@ impl Debug for Redis {
     }
 }
 
-pub(crate) fn run_in_transaction<T, F>(conn: &mut redis::Connection, f: F) -> PyResult<T>
+/// Runs a given routine in a redis transaction for atomicity.
+fn run_in_transaction<T, F>(conn: &mut redis::Connection, f: F) -> PyResult<T>
 where
     F: FnOnce(&mut redis::Pipeline) -> PyResult<T>,
     T: redis::FromRedisValue,
@@ -253,11 +279,13 @@ where
         .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))
 }
 
-pub(crate) fn connect_to_redis(url: &str) -> redis::RedisResult<redis::Connection> {
+/// Opens a connection to redis given the url
+fn connect_to_redis(url: &str) -> redis::RedisResult<redis::Connection> {
     let client = redis::Client::open(url)?;
     client.get_connection()
 }
 
+/// Inserts a given item on a pipeline without executing the pipeline
 pub(crate) fn insert_on_pipeline(
     pipe: &mut redis::Pipeline,
     table: &str,
@@ -280,6 +308,8 @@ pub(crate) fn insert_on_pipeline(
     Ok(name)
 }
 
+/// Converts a hashmap whose values are any oython object, into a vector of (key, value) tuples
+/// with the value converted to a string representation
 pub(crate) fn serialize_to_key_value_pairs<'a>(
     pipe: &mut redis::Pipeline,
     raw_data: &'a HashMap<String, Py<PyAny>>,
@@ -303,7 +333,7 @@ pub(crate) fn serialize_to_key_value_pairs<'a>(
     })
 }
 
-/// serialize_nested_model will return the foreign key
+/// serialize_nested_model will return an optional foreign key
 /// if the nested data is actually a nested model that has a dict() method
 fn serialize_nested_model(
     pipe: &mut redis::Pipeline,
@@ -329,10 +359,12 @@ fn serialize_nested_model(
     }
 }
 
+/// Gets the index key of the virtual table.
 fn get_table_index(table: &str) -> String {
     format!("{}__index", table)
 }
 
+/// Gets the primary key for the given table-key combination
 fn get_primary_key(table: &str, key: &str) -> String {
     format!("{}_%&_{}", table, key)
 }
