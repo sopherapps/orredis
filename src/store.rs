@@ -22,7 +22,7 @@ impl Redis {
     // [x] insert_dict
     // [x] insert_dict_list
     // [x] select
-    // update
+    // [x] update
     // delete
     // [x] is_open
 
@@ -186,6 +186,18 @@ impl Redis {
                 Ok(response)
             }
         }
+    }
+
+    #[args(table, key, data, life_span = "None")]
+    #[pyo3(text_signature = "($self, table, key, data, lifespan)")]
+    pub(crate) fn update(
+        &mut self,
+        table: &str,
+        key: &str,
+        data: Py<PyDict>,
+        life_span: Option<usize>,
+    ) -> PyResult<()> {
+        self.insert_dict(table, key, data, life_span)
     }
 
     pub fn is_open(&self) -> PyResult<bool> {
