@@ -1,9 +1,10 @@
 extern crate redis;
 
-use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
+use pyo3::exceptions::{PyConnectionError, PyKeyError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList, PyString};
-use redis::{Connection, ConnectionLike, RedisError, RedisResult};
+use pyo3::types::{PyDict, PyList};
+use redis::{Commands, ConnectionLike};
+use serde_json::json;
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
@@ -20,7 +21,7 @@ impl Redis {
     // [x] close
     // [x] insert_dict
     // [x] insert_dict_list
-    // select
+    // [x] select
     // update
     // delete
     // [x] is_open
@@ -100,17 +101,90 @@ impl Redis {
     pub(crate) fn select(
         &mut self,
         table: &str,
-        ids: Option<Vec<&str>>,
+        ids: Option<Vec<String>>,
         columns: Option<Vec<&str>>,
+        nested_columns: Option<HashMap<&str, String>>,
     ) -> PyResult<Vec<HashMap<String, String>>> {
         let conn = self.conn.as_mut();
+
         match conn {
             None => Err(PyConnectionError::new_err("redis server disconnected")),
-            Some(conn) => run_in_transaction(conn, |pipe| {
-                let result: Vec<HashMap<String, String>> = vec![];
+            Some(conn) => {
+                let table_index = get_table_index(table);
+                let ids: Vec<String> = match ids {
+                    None => conn
+                        .sscan(&table_index)
+                        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?
+                        .collect(),
+                    Some(list) => list
+                        .into_iter()
+                        .map(|k| get_primary_key(table, &k))
+                        .collect(),
+                };
 
-                Ok(result)
-            }),
+                let mut response = match columns {
+                    None => {
+                        let raw_data = run_in_transaction(
+                            conn,
+                            |pipe| -> PyResult<Vec<HashMap<String, String>>> {
+                                for k in ids {
+                                    pipe.hgetall(k);
+                                }
+                                Ok(vec![])
+                            },
+                        )?;
+                        raw_data
+                    }
+                    Some(cols) => {
+                        let raw = run_in_transaction(conn, |pipe| -> PyResult<Vec<Vec<String>>> {
+                            for k in ids {
+                                pipe.cmd("HMGET").arg(k).arg(&cols);
+                            }
+                            Ok(vec![])
+                        })?;
+
+                        raw.into_iter()
+                            .map(|item| {
+                                item.into_iter()
+                                    .zip(&cols)
+                                    .map(|(k, v)| (k, v.to_string()))
+                                    .collect::<HashMap<String, String>>()
+                            })
+                            .collect()
+                    }
+                };
+
+                // do some eager loading
+                match nested_columns {
+                    None => {}
+                    Some(nested_col_map) => {
+                        let response_length = response.len();
+
+                        for (field, table) in nested_col_map {
+                            let table = table.to_lowercase();
+                            let mut foreign_keys: Vec<String> = Vec::with_capacity(response_length);
+
+                            for i in 0..response.len() {
+                                let item = &response[i];
+                                let f_key = item.get(field).unwrap_or(&"".to_string()).to_owned();
+                                foreign_keys.push(f_key);
+                            }
+
+                            let eager_response =
+                                self.select(&table, Some(foreign_keys), None, None)?;
+
+                            for i in 0..response.len() {
+                                let _ = &response[i].insert(
+                                    field.to_string(),
+                                    format!("{}", json!(eager_response[i])),
+                                );
+                            }
+                        }
+                    }
+                }
+
+                Ok(response)
+            }
         }
     }
 
@@ -179,38 +253,37 @@ pub(crate) fn insert_on_pipeline(
     key: &str,
     raw_data: &HashMap<String, Py<PyAny>>,
 ) -> PyResult<String> {
-    let name = format!("{}_%&_{}", table, key);
+    let name = get_primary_key(table, key);
     let data = serialize_to_key_value_pairs(pipe, raw_data)?;
+    let table_index = get_table_index(table);
 
     pipe.hset_multiple(&name, &data);
-    pipe.sadd(table, &name);
+    pipe.sadd(&table_index, &name);
 
     if let Some(life_span) = life_span {
         pipe.expire(&name, life_span);
-        pipe.expire(table, life_span);
+        pipe.expire(&table_index, life_span);
     }
 
     Ok(name)
 }
 
-pub(crate) fn serialize_to_key_value_pairs(
+pub(crate) fn serialize_to_key_value_pairs<'a>(
     pipe: &mut redis::Pipeline,
-    raw_data: &HashMap<String, Py<PyAny>>,
-) -> PyResult<Vec<(String, String)>> {
-    Python::with_gil(|py| -> PyResult<Vec<(String, String)>> {
-        let mut data: Vec<(String, String)> = Vec::with_capacity(raw_data.len());
+    raw_data: &'a HashMap<String, Py<PyAny>>,
+) -> PyResult<Vec<(&'a str, String)>> {
+    Python::with_gil(|py| -> PyResult<Vec<(&'a str, String)>> {
+        let mut data: Vec<(&'a str, String)> = Vec::with_capacity(raw_data.len());
 
         for (field, value) in raw_data {
             let value = value.as_ref(py);
             let field_type = value.get_type().to_string();
             if field_type.contains(".") {
-                let kv_pair = serialize_nested_model(pipe, field, value, &field_type);
-                match kv_pair {
-                    None => data.push((field.to_owned(), value.to_string())),
-                    Some((k, v)) => data.push((k, v)),
-                }
+                let foreign_key = serialize_nested_model(pipe, field, value, &field_type)
+                    .unwrap_or(value.to_string());
+                data.push((field, foreign_key));
             } else {
-                data.push((field.to_owned(), value.to_string()));
+                data.push((field, value.to_string()));
             }
         }
 
@@ -218,32 +291,36 @@ pub(crate) fn serialize_to_key_value_pairs(
     })
 }
 
-/// serialize_nested_model will return the key with a '__' suffix and the foreign key
+/// serialize_nested_model will return the foreign key
 /// if the nested data is actually a nested model that has a dict() method
 fn serialize_nested_model(
     pipe: &mut redis::Pipeline,
     key: &str,
     nested_model: &PyAny,
     field_type: &str,
-) -> Option<(String, String)> {
+) -> Option<String> {
     let name_portions: Vec<&str> = field_type.rsplit(".").collect();
 
     match name_portions.last() {
         Some(table) => {
+            let table = table.to_lowercase();
             let result = nested_model.call_method("dict", (), None);
             match result {
                 Ok(dict) => dict
                     .extract::<HashMap<String, Py<PyAny>>>()
-                    .and_then(|data| {
-                        let suffixed_key = format!("__{}", key);
-                        let foreign_key =
-                            insert_on_pipeline(pipe, &table, None, &suffixed_key, &data)?;
-                        Ok((suffixed_key, foreign_key))
-                    })
+                    .and_then(|data| insert_on_pipeline(pipe, &table, None, key, &data))
                     .ok(),
                 Err(_) => None,
             }
         }
         None => None,
     }
+}
+
+fn get_table_index(table: &str) -> String {
+    format!("{}__index", table)
+}
+
+fn get_primary_key(table: &str, key: &str) -> String {
+    format!("{}_%&_{}", table, key)
 }
