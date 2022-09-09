@@ -1,0 +1,15 @@
+[package]
+name = "orredis"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "orredis"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.16.5", features = ["extension-module"] }
+redis = { version = "0.21.*" }
+serde = { version = "1", default_features = false }
+serde_json = { version = "1.0", default_features = false, features = ["std", "float_roundtrip"] }
