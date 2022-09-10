@@ -329,7 +329,6 @@ where
     let result = pipe
         .query::<T>(conn)
         .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
-    println!("{:?}", json!(result));
 
     Ok(result)
 }
