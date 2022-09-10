@@ -32,12 +32,12 @@ impl Redis {
     }
 
     /// Inserts a python dict object into redis in the given virtual table, with the given life span
-    #[args(table, key, data, life_span = "None")]
-    #[pyo3(text_signature = "($self, table, key, data, lifespan)")]
+    #[args(table, key_field, data, life_span = "None")]
+    #[pyo3(text_signature = "($self, table, key_field, data, lifespan)")]
     pub fn insert_dict(
         &mut self,
         table: &str,
-        key: &str,
+        key_field: &str,
         data: Py<PyDict>,
         life_span: Option<usize>,
     ) -> PyResult<()> {
@@ -48,6 +48,11 @@ impl Redis {
                 Python::with_gil(|py| {
                     let data_cast_result: PyResult<HashMap<String, Py<PyAny>>> = data.extract(py);
                     data_cast_result.and_then(|raw_data| {
+                        let key: &str = raw_data
+                            .get(key_field)
+                            .ok_or(PyKeyError::new_err(key_field.to_string()))
+                            .and_then(|raw_key| raw_key.extract(py))?;
+
                         insert_on_pipeline(pipe, table, life_span, key, &raw_data)?;
                         Ok(())
                     })
@@ -90,12 +95,12 @@ impl Redis {
     }
 
     /// Selects the given ids or if none is given, all ids are selected for the given virtual table
-    #[args(table, ids = "None", columns = "None")]
-    #[pyo3(text_signature = "($self, table, ids, columns)")]
+    #[args(table, ids = "None", columns = "None", nested_columns = "None")]
+    #[pyo3(text_signature = "($self, table, ids, columns, nested_columns)")]
     pub fn select(
         &mut self,
         table: &str,
-        ids: Option<Vec<String>>,
+        ids: Option<Vec<Py<PyAny>>>,
         columns: Option<Vec<&str>>,
         nested_columns: Option<HashMap<&str, String>>,
     ) -> PyResult<Vec<HashMap<String, String>>> {
@@ -112,6 +117,7 @@ impl Redis {
                         .collect(),
                     Some(list) => list
                         .into_iter()
+                        .map(|k| k.to_string())
                         .map(|k| get_primary_key(table, &k))
                         .collect(),
                 };
@@ -148,24 +154,25 @@ impl Redis {
                     }
                 };
 
-                // do some eager loading
+                // do some eager loading, but only handling single-level nesting
                 match nested_columns {
                     None => {}
                     Some(nested_col_map) => {
-                        let response_length = response.len();
-
                         for (field, table) in nested_col_map {
                             let table = table.to_lowercase();
-                            let mut foreign_keys: Vec<String> = Vec::with_capacity(response_length);
 
-                            for i in 0..response.len() {
-                                let item = &response[i];
-                                let f_key = item.get(field).unwrap_or(&"".to_string()).to_owned();
-                                foreign_keys.push(f_key);
-                            }
-
-                            let eager_response =
-                                self.select(&table, Some(foreign_keys), None, None)?;
+                            let eager_response = run_in_transaction(
+                                conn,
+                                |pipe| -> PyResult<Vec<HashMap<String, String>>> {
+                                    for i in 0..response.len() {
+                                        let item = &response[i];
+                                        let f_key =
+                                            item.get(field).unwrap_or(&"".to_string()).to_owned();
+                                        pipe.hgetall(get_primary_key(&table, &f_key));
+                                    }
+                                    Ok(vec![])
+                                },
+                            )?;
 
                             for i in 0..response.len() {
                                 let _ = &response[i].insert(
@@ -184,21 +191,34 @@ impl Redis {
 
     /// Updates the record of the given key in the given virtual table
     #[args(table, key, data, life_span = "None")]
-    #[pyo3(text_signature = "($self, table, key, data, lifespan)")]
+    #[pyo3(text_signature = "($self, table, key, data, life_span)")]
     pub fn update(
         &mut self,
         table: &str,
-        key: &str,
+        key: Py<PyAny>,
         data: Py<PyDict>,
         life_span: Option<usize>,
     ) -> PyResult<()> {
-        self.insert_dict(table, key, data, life_span)
+        let conn = self.conn.as_mut();
+        match conn {
+            None => Err(PyConnectionError::new_err("redis server disconnected")),
+            Some(conn) => run_in_transaction(conn, |pipe| {
+                Python::with_gil(|py| {
+                    let data_cast_result: PyResult<HashMap<String, Py<PyAny>>> = data.extract(py);
+                    data_cast_result.and_then(|raw_data| {
+                        let key = key.to_string();
+                        insert_on_pipeline(pipe, table, life_span, &key, &raw_data)?;
+                        Ok(())
+                    })
+                })
+            }),
+        }
     }
 
     /// Deletes the records of the given ids from the given virtual table in redis
     #[args(table, ids)]
     #[pyo3(text_signature = "($self, table, ids)")]
-    pub fn delete(&mut self, table: &str, ids: Vec<String>) -> PyResult<()> {
+    pub fn delete(&mut self, table: &str, ids: Vec<Py<PyAny>>) -> PyResult<()> {
         let conn = self.conn.as_mut();
         match conn {
             None => Err(PyConnectionError::new_err("redis server disconnected")),
@@ -206,6 +226,7 @@ impl Redis {
                 let table_index = get_table_index(table);
                 let keys: Vec<String> = ids
                     .into_iter()
+                    .map(|k| k.to_string())
                     .map(|k| get_primary_key(table, &k))
                     .collect();
 
@@ -215,6 +236,23 @@ impl Redis {
                     Ok(())
                 })
             }),
+        }
+    }
+
+    /// Clears all keys on this redis instance
+    #[args(asynchronous = "false")]
+    #[pyo3(text_signature = "($self, asynchronous)")]
+    pub fn flushall(&mut self, asynchronous: bool) -> PyResult<()> {
+        let conn = self.conn.as_mut();
+        match conn {
+            None => Err(PyConnectionError::new_err("redis server disconnected")),
+            Some(conn) => {
+                let arg = if asynchronous { "ASYNC" } else { "SYNC" };
+                redis::cmd("FLUSHALL")
+                    .arg(arg)
+                    .query(conn)
+                    .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))
+            }
         }
     }
 
