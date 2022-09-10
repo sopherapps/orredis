@@ -1,6 +1,6 @@
 extern crate redis;
 
-use pyo3::exceptions::{PyConnectionError, PyKeyError};
+use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 use redis::{Commands, ConnectionLike};
@@ -48,12 +48,12 @@ impl Redis {
                 Python::with_gil(|py| {
                     let data_cast_result: PyResult<HashMap<String, Py<PyAny>>> = data.extract(py);
                     data_cast_result.and_then(|raw_data| {
-                        let key: &str = raw_data
+                        let key: String = raw_data
                             .get(key_field)
-                            .ok_or(PyKeyError::new_err(key_field.to_string()))
-                            .and_then(|raw_key| raw_key.extract(py))?;
+                            .ok_or(PyKeyError::new_err(format!("{}", key_field)))
+                            .and_then(|raw_key| Ok(format!("{}", raw_key)))?;
 
-                        insert_on_pipeline(pipe, table, life_span, key, &raw_data)?;
+                        insert_on_pipeline(pipe, table, life_span, &key, &raw_data)?;
                         Ok(())
                     })
                 })
@@ -80,12 +80,12 @@ impl Redis {
                         data.extract(py);
                     data_cast_result.and_then(|data_list| {
                         for raw_data in &data_list {
-                            let key: &str = raw_data
+                            let key: String = raw_data
                                 .get(key_field)
                                 .ok_or(PyKeyError::new_err(key_field.to_string()))
-                                .and_then(|raw_key| raw_key.extract(py))?;
+                                .and_then(|raw_key| Ok(format!("{}", raw_key)))?;
 
-                            insert_on_pipeline(pipe, table, life_span, key, raw_data)?;
+                            insert_on_pipeline(pipe, table, life_span, &key, raw_data)?;
                         }
                         Ok(())
                     })
@@ -117,14 +117,14 @@ impl Redis {
                         .collect(),
                     Some(list) => list
                         .into_iter()
-                        .map(|k| k.to_string())
+                        .map(|k| format!("{}", k))
                         .map(|k| get_primary_key(table, &k))
                         .collect(),
                 };
 
                 let mut response = match columns {
                     None => {
-                        let raw_data = run_in_transaction(
+                        let raw_data = run_without_transaction(
                             conn,
                             |pipe| -> PyResult<Vec<HashMap<String, String>>> {
                                 for k in ids {
@@ -136,18 +136,19 @@ impl Redis {
                         raw_data
                     }
                     Some(cols) => {
-                        let raw = run_in_transaction(conn, |pipe| -> PyResult<Vec<Vec<String>>> {
-                            for k in ids {
-                                pipe.cmd("HMGET").arg(k).arg(&cols);
-                            }
-                            Ok(vec![])
-                        })?;
+                        let raw =
+                            run_without_transaction(conn, |pipe| -> PyResult<Vec<Vec<String>>> {
+                                for k in ids {
+                                    pipe.cmd("HMGET").arg(k).arg(&cols);
+                                }
+                                Ok(vec![])
+                            })?;
 
                         raw.into_iter()
                             .map(|item| {
                                 item.into_iter()
                                     .zip(&cols)
-                                    .map(|(k, v)| (k, v.to_string()))
+                                    .map(|(v, k)| (k.to_string(), v))
                                     .collect::<HashMap<String, String>>()
                             })
                             .collect()
@@ -159,16 +160,14 @@ impl Redis {
                     None => {}
                     Some(nested_col_map) => {
                         for (field, table) in nested_col_map {
-                            let table = table.to_lowercase();
-
-                            let eager_response = run_in_transaction(
+                            let eager_response = run_without_transaction(
                                 conn,
                                 |pipe| -> PyResult<Vec<HashMap<String, String>>> {
                                     for i in 0..response.len() {
                                         let item = &response[i];
                                         let f_key =
                                             item.get(field).unwrap_or(&"".to_string()).to_owned();
-                                        pipe.hgetall(get_primary_key(&table, &f_key));
+                                        pipe.hgetall(&f_key);
                                     }
                                     Ok(vec![])
                                 },
@@ -206,7 +205,7 @@ impl Redis {
                 Python::with_gil(|py| {
                     let data_cast_result: PyResult<HashMap<String, Py<PyAny>>> = data.extract(py);
                     data_cast_result.and_then(|raw_data| {
-                        let key = key.to_string();
+                        let key = format!("{}", key);
                         insert_on_pipeline(pipe, table, life_span, &key, &raw_data)?;
                         Ok(())
                     })
@@ -226,15 +225,14 @@ impl Redis {
                 let table_index = get_table_index(table);
                 let keys: Vec<String> = ids
                     .into_iter()
-                    .map(|k| k.to_string())
+                    .map(|k| format!("{}", k))
                     .map(|k| get_primary_key(table, &k))
                     .collect();
 
-                Python::with_gil(|py| {
-                    pipe.del(&keys);
-                    pipe.srem(table_index, &keys);
-                    Ok(())
-                })
+                pipe.del(&keys);
+                pipe.srem(table_index, &keys);
+
+                Ok(())
             }),
         }
     }
@@ -305,7 +303,7 @@ impl Debug for Redis {
 fn run_in_transaction<T, F>(conn: &mut redis::Connection, f: F) -> PyResult<T>
 where
     F: FnOnce(&mut redis::Pipeline) -> PyResult<T>,
-    T: redis::FromRedisValue,
+    T: redis::FromRedisValue + serde::ser::Serialize,
 {
     let mut pipe = redis::pipe();
     // attempt to open a transaction in a pipeline manually
@@ -313,8 +311,27 @@ where
     f(&mut pipe)?;
     // attempt to close a transaction manually
     pipe.cmd("EXEC");
-    pipe.query::<T>(conn)
-        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))
+    let result = pipe
+        .query::<T>(conn)
+        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
+
+    Ok(result)
+}
+
+/// Runs in pipeline but without transaction
+fn run_without_transaction<T, F>(conn: &mut redis::Connection, f: F) -> PyResult<T>
+where
+    F: FnOnce(&mut redis::Pipeline) -> PyResult<T>,
+    T: redis::FromRedisValue + serde::ser::Serialize,
+{
+    let mut pipe = redis::pipe();
+    f(&mut pipe)?;
+    let result = pipe
+        .query::<T>(conn)
+        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
+    println!("{:?}", json!(result));
+
+    Ok(result)
 }
 
 /// Opens a connection to redis given the url
@@ -359,11 +376,10 @@ fn serialize_to_key_value_pairs<'a>(
             let value = value.as_ref(py);
             let field_type = value.get_type().to_string();
             if field_type.contains(".") {
-                let foreign_key = serialize_nested_model(pipe, field, value, &field_type)
-                    .unwrap_or(value.to_string());
+                let foreign_key = serialize_py_value(pipe, value, &field_type)?;
                 data.push((field, foreign_key));
             } else {
-                data.push((field, value.to_string()));
+                data.push((field, format!("{}", value)));
             }
         }
 
@@ -371,29 +387,47 @@ fn serialize_to_key_value_pairs<'a>(
     })
 }
 
-/// serialize_nested_model will return an optional foreign key
-/// if the nested data is actually a nested model that has a dict() method
-fn serialize_nested_model(
+/// serialize_py_value will return a foreign key of a value if the value is a nested model
+/// or it will return the value as a string
+/// if the nested data is actually a nested model that has a dict() method and a get_primary_key_field
+/// method
+fn serialize_py_value(
     pipe: &mut redis::Pipeline,
-    key: &str,
     nested_model: &PyAny,
     field_type: &str,
-) -> Option<String> {
+) -> PyResult<String> {
     let name_portions: Vec<&str> = field_type.rsplit(".").collect();
 
-    match name_portions.last() {
+    match name_portions.first() {
         Some(table) => {
-            let table = table.to_lowercase();
+            let table = table.trim_end_matches("'>").to_lowercase();
             let result = nested_model.call_method("dict", (), None);
+            let key_field_result = nested_model
+                .call_method("get_primary_key_field", (), None)
+                .and_then(|v| Ok(format!("{}", v)));
             match result {
                 Ok(dict) => dict
                     .extract::<HashMap<String, Py<PyAny>>>()
-                    .and_then(|data| insert_on_pipeline(pipe, &table, None, key, &data))
-                    .ok(),
-                Err(_) => None,
+                    .and_then(|data| match key_field_result {
+                        Ok(key_field) => {
+                            let key = data
+                                .get(&key_field)
+                                .and_then(|v| Some(format!("{}", v)))
+                                .ok_or(PyKeyError::new_err(format!(
+                                    "{} not found on {}",
+                                    &key_field, field_type
+                                )))?;
+                            insert_on_pipeline(pipe, &table, None, &key, &data)
+                        }
+                        Err(e) => Err(e),
+                    }),
+                Err(_) => Err(PyValueError::new_err(format!(
+                    "{} is not a Model",
+                    field_type
+                ))),
             }
         }
-        None => None,
+        None => Ok(format!("{}", nested_model)),
     }
 }
 

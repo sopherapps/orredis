@@ -10,3 +10,15 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
+dependencies = [
+    'pydantic >= 1.10.2'
+]
+
+[project.optional-dependencies]
+tests = [
+    "maturin>=0.13,<0.14",
+    'pytest',
+    'pytest-benchmark',
+    'redislite',
+    'pytest-lazy-fixture'
+]
