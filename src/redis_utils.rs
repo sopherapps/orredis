@@ -1,9 +1,11 @@
-use crate::store::Record;
-use crate::{Model, Store};
+use std::collections::HashMap;
+
 use pyo3::exceptions::{PyConnectionError, PyValueError};
 use pyo3::types::PyType;
-use pyo3::{IntoPy, Py, PyAny, PyResult, Python};
-use std::collections::HashMap;
+use pyo3::{IntoPy, Py, PyAny, PyDowncastError, PyResult, Python};
+
+use crate::store::Record;
+use crate::{Model, Store};
 
 /// Opens a connection to redis given the url
 pub(crate) fn connect_to_redis(url: &str) -> redis::RedisResult<redis::Connection> {
@@ -139,7 +141,7 @@ fn serialize_to_key_value_pairs(
 }
 
 pub(crate) fn parse_model(
-    fields: &HashMap<String, Py<PyType>>,
+    fields: &HashMap<String, Py<PyAny>>,
     store: &mut Store,
     data: HashMap<String, String>,
 ) -> PyResult<Model> {
@@ -163,11 +165,14 @@ pub(crate) fn parse_model(
     Ok(Model { _data })
 }
 
-fn str_to_py_type(store: &mut Store, value: &str, field_type: &PyType) -> PyResult<Py<PyAny>> {
+fn str_to_py_type(store: &mut Store, value: &str, field_type: &PyAny) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| -> PyResult<Py<PyAny>> {
-        let field_name = field_type.name();
+        let field_name: Result<&PyType, PyDowncastError> = field_type.downcast::<PyType>();
         let field_name = match field_name {
-            Ok(v) => v.to_string(),
+            Ok(v) => {
+                let v = v.name()?;
+                v.to_string()
+            }
             Err(_) => field_type.to_string(),
         };
 

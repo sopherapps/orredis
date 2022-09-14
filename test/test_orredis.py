@@ -2,14 +2,14 @@
 
 import pytest
 
-from orredis import PydanticModel
+from orredis import BaseModel
 from test.conftest import Book, redis_store_fixture, books, authors, Author
 
 
 def test_register_model_without_primary_key(redis_store):
     """Throws error when a model without the _primary_key_field class variable set is registered"""
 
-    class ModelWithoutPrimaryKey(PydanticModel):
+    class ModelWithoutPrimaryKey(BaseModel):
         title: str
 
     with pytest.raises(AttributeError, match=r"_primary_key_field"):
@@ -17,7 +17,7 @@ def test_register_model_without_primary_key(redis_store):
 
     ModelWithoutPrimaryKey._primary_key_field = None
 
-    with pytest.raises(Exception, match=r"should have a _primary_key_field"):
+    with pytest.raises(ValueError, match=r"_primary_key_field must be a string"):
         redis_store.register_model(ModelWithoutPrimaryKey)
 
 

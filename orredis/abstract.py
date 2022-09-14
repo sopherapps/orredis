@@ -3,6 +3,7 @@ Module containing the abstract classes.
 These ease when cross-referring classes that have cyclic dependencies
 """
 from typing import Optional, Dict, Any, Union, List
+
 from orredis.orredis import Store, Model
 
 
@@ -13,16 +14,6 @@ class BaseModel(Model):
     _store: Store
     _primary_key_field: str
     _life_span: Optional[int] = None
-
-    @classmethod
-    def get_name(cls):
-        """Returns the name of the class"""
-        return cls.__name__.lower()
-
-    @classmethod
-    def get_primary_key_field(cls):
-        """Gets the protected _primary_key_field"""
-        return cls._primary_key_field
 
     @classmethod
     def insert(cls, data: Union[List["BaseModel"], "BaseModel"], life_span_seconds: Optional[float] = None):

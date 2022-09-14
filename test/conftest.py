@@ -6,16 +6,16 @@ import pytest
 import redislite
 from pytest_lazyfixture import lazy_fixture
 
-from orredis import Store, PydanticModel
+from orredis import Store, BaseModel
 
 
-class Author(PydanticModel):
+class Author(BaseModel):
     _primary_key_field: str = 'name'
     name: str
     active_years: Tuple[int, int]
 
 
-class Book(PydanticModel):
+class Book(BaseModel):
     _primary_key_field: str = 'title'
     title: str
     author: Author

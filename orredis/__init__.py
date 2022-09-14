@@ -1,8 +1,8 @@
-from orredis.orredis import Store, Model
-from orredis.pydantic import PydanticModel
+from orredis.orredis import Store
+
+from .abstract import BaseModel
 
 __all__ = [
     Store,
-    Model,
-    PydanticModel,
+    BaseModel,
 ]

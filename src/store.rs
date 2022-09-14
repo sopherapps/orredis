@@ -1,11 +1,13 @@
-use crate::model::ModelMeta;
-use crate::{redis_utils, Model};
+use std::collections::HashMap;
+
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 use pyo3::{Py, PyAny, PyResult, Python};
 use redis::{Commands, ConnectionLike};
-use std::collections::HashMap;
+
+use crate::model::ModelMeta;
+use crate::{redis_utils, Model};
 
 pub enum Record {
     Full { data: Model },
@@ -90,14 +92,18 @@ impl Store {
     /// Adds the given model to the hashmap of models,
     /// Also sets the class attribute _store of the model to itself
     /// to be retrieved later when running any query
-    pub(crate) fn register_model(&mut self, model_type: Py<PyType>) -> PyResult<()> {
+    pub(crate) fn register_model(
+        mut slf: PyRefMut<'_, Self>,
+        model_type: Py<PyType>,
+    ) -> PyResult<()> {
         Python::with_gil(|py| -> PyResult<()> {
             let model_type = model_type.as_ref(py);
             let model_name: String = model_type.call_method0("get_name")?.extract()?;
-            match self.models.get(&model_name) {
+            match slf.models.get(&model_name) {
                 None => {
                     let new_model_meta = ModelMeta::new(model_type)?;
-                    self.models.insert(model_name, new_model_meta).unwrap();
+                    slf.models.insert(model_name, new_model_meta);
+                    model_type.setattr("_store", Py::clone_ref(&Py::from(slf), py))?;
                     Ok(())
                 }
                 Some(_) => Err(PyKeyError::new_err(format!(

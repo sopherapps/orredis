@@ -1,10 +1,11 @@
 extern crate redis;
 
+use std::collections::hash_map;
+use std::collections::HashMap;
+
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
-use std::collections::hash_map;
-use std::collections::HashMap;
 
 /// The Model is a schema for each record to be saved in a given collection in redis
 #[derive(Clone)]
@@ -30,12 +31,12 @@ impl Model {
     }
 
     #[classmethod]
-    fn get_fields(cls: &PyType) -> PyResult<HashMap<String, Py<PyType>>> {
-        Python::with_gil(|py| -> PyResult<HashMap<String, Py<PyType>>> {
+    fn get_fields(cls: &PyType) -> PyResult<HashMap<String, Py<PyAny>>> {
+        Python::with_gil(|py| -> PyResult<HashMap<String, Py<PyAny>>> {
             let typing = PyModule::import(py, "typing")?;
-            let field_types: HashMap<String, Py<PyType>> =
+            let field_types: HashMap<String, Py<PyAny>> =
                 typing.getattr("get_type_hints")?.call1((cls,))?.extract()?;
-            let public_fields: HashMap<String, Py<PyType>> = field_types
+            let public_fields: HashMap<String, Py<PyAny>> = field_types
                 .into_iter()
                 .filter(|(k, _)| !k.starts_with("_"))
                 .collect();
@@ -54,8 +55,15 @@ impl Model {
 
     #[classmethod]
     fn get_primary_key_field(cls: &PyType) -> PyResult<String> {
-        let primary_key_field: String = cls.getattr("_primary_key_field")?.extract()?;
-        Ok(primary_key_field)
+        match cls.getattr("_primary_key_field") {
+            Ok(pk_field) => match pk_field.extract::<String>() {
+                Ok(pk_field) => Ok(pk_field),
+                Err(_) => Err(PyValueError::new_err("_primary_key_field must be a string")),
+            },
+            Err(_) => Err(PyAttributeError::new_err(
+                "should have a _primary_key_field",
+            )),
+        }
     }
 
     pub fn dict(&self) -> PyResult<HashMap<String, Py<PyAny>>> {
@@ -98,7 +106,8 @@ impl Model {
 
     pub(crate) fn get_instance_model_name(value: Py<PyAny>) -> PyResult<String> {
         Python::with_gil(|py| -> PyResult<String> {
-            let name: String = value.getattr(py, "__class__.__name__")?.extract(py)?;
+            let value = value.as_ref(py).get_type();
+            let name: String = value.getattr("__name__")?.extract()?;
             let name = name.to_lowercase();
             Ok(name)
         })
@@ -116,31 +125,39 @@ impl IntoIterator for Model {
 
 /// Class that holds the meta for each given Model
 pub struct ModelMeta {
-    pub(crate) fields: HashMap<String, Py<PyType>>,
+    pub(crate) fields: HashMap<String, Py<PyAny>>,
     pub(crate) primary_key_field: String,
 }
 
 impl ModelMeta {
     pub fn new(model_type: &PyType) -> PyResult<Self> {
-        Python::with_gil(|py| -> PyResult<Self> {
-            let builtins = PyModule::import(py, "builtins")?;
-            let is_model: bool = builtins
-                .getattr("issubclass")?
-                .call((model_type, "builtins.Model"), None)?
-                .extract()?;
-            if is_model {
-                Ok(ModelMeta {
-                    fields: model_type.call_method0("get_fields")?.extract()?,
-                    primary_key_field: model_type
-                        .call_method0("get_primary_key_field")?
-                        .extract()?,
-                })
-            } else {
-                Err(PyValueError::new_err(format!(
-                    "{} is not of type Model",
-                    model_type
-                )))
-            }
-        })
+        if is_model(model_type)? {
+            Ok(ModelMeta {
+                fields: model_type.call_method0("get_fields")?.extract()?,
+                primary_key_field: model_type
+                    .call_method0("get_primary_key_field")?
+                    .extract()?,
+            })
+        } else {
+            Err(PyValueError::new_err(format!(
+                "{} is not of type Model",
+                model_type
+            )))
+        }
     }
+}
+
+fn is_model(model_type: &PyType) -> PyResult<bool> {
+    Python::with_gil(|py| -> PyResult<bool> {
+        let builtins = PyModule::import(py, "builtins")?;
+        let sample_model = Model::empty();
+        let sample_model = sample_model.into_py(py);
+        let sample_model = sample_model.as_ref(py);
+        let ref_model_type = sample_model.get_type();
+        let is_model: bool = builtins
+            .getattr("issubclass")?
+            .call((model_type, ref_model_type), None)?
+            .extract()?;
+        Ok(is_model)
+    })
 }
