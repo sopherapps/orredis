@@ -6,16 +6,16 @@ import pytest
 import redislite
 from pytest_lazyfixture import lazy_fixture
 
-from orredis import Store, RedisConfig, Model
+from orredis import Store, PydanticModel
 
 
-class Author(Model):
+class Author(PydanticModel):
     _primary_key_field: str = 'name'
     name: str
     active_years: Tuple[int, int]
 
 
-class Book(Model):
+class Book(PydanticModel):
     _primary_key_field: str = 'title'
     title: str
     author: Author
@@ -71,11 +71,7 @@ def redis_server(unused_tcp_port):
 @pytest.fixture()
 def redis_store(redis_server):
     """Sets up a redis store using the redis_server fixture and adds the book model to it"""
-    store = Store(
-        name="sample",
-        redis_config=RedisConfig(port=redis_server, db=1),
-        life_span_in_seconds=3600,
-    )
+    store = Store(url=f"redis://localhost:{redis_server}/1")
     store.register_model(Book)
     store.register_model(Author)
     yield store

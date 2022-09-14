@@ -1,10 +1,8 @@
-from .config import RedisConfig
-from .model import Model
-from .store import Store
+from orredis.orredis import Store, Model
+from orredis.pydantic import PydanticModel
 
 __all__ = [
     Store,
     Model,
-    RedisConfig
+    PydanticModel,
 ]
-__version__ = "0.1.0"

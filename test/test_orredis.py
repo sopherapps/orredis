@@ -2,28 +2,14 @@
 
 import pytest
 
-from orredis.config import RedisConfig
-from orredis.model import Model
+from orredis import PydanticModel
 from test.conftest import Book, redis_store_fixture, books, authors, Author
-
-
-def test_redis_config_redis_url():
-    password = "password"
-    config_with_no_pass = RedisConfig()
-    config_with_ssl = RedisConfig(ssl=True)
-    config_with_pass = RedisConfig(password=password)
-    config_with_pass_ssl = RedisConfig(ssl=True, password=password)
-
-    assert config_with_no_pass.redis_url == "redis://localhost:6379/0"
-    assert config_with_ssl.redis_url == "rediss://localhost:6379/0"
-    assert config_with_pass.redis_url == f"redis://:{password}@localhost:6379/0"
-    assert config_with_pass_ssl.redis_url == f"rediss://:{password}@localhost:6379/0"
 
 
 def test_register_model_without_primary_key(redis_store):
     """Throws error when a model without the _primary_key_field class variable set is registered"""
 
-    class ModelWithoutPrimaryKey(Model):
+    class ModelWithoutPrimaryKey(PydanticModel):
         title: str
 
     with pytest.raises(AttributeError, match=r"_primary_key_field"):
@@ -51,14 +37,6 @@ def test_store_clear(store):
     assert authors_in_store_before_clear != []
     assert books_in_store_after_clear == []
     assert authors_in_store_after_clear == []
-
-
-def test_store_model(redis_store):
-    """Tests the model method in store"""
-    assert redis_store.model("Book") == Book
-
-    with pytest.raises(KeyError):
-        redis_store.model("Notabook")
 
 
 @pytest.mark.parametrize("store", redis_store_fixture)
@@ -166,13 +144,13 @@ def test_update(store):
     new_author = Author(name='John Doe', active_years=(2000, 2009))
     new_author_key = new_author.name
 
-    old_book = Book.select(ids=[title])[0]
+    old_book = Book.select(ids=[title])
     assert old_book == books[0]
     assert old_book.author != new_author
 
     Book.update(_id=title, data={"author": new_author, "in_stock": new_in_stock})
 
-    book = Book.select(ids=[title])[0]
+    book = Book.select(ids=title)
     author = Author.select(ids=[new_author_key])[0]
     assert book.author == new_author
     assert author == new_author
@@ -195,15 +173,15 @@ def test_update_nested_model(store):
     author_key = updated_author.name
 
     old_author = Author.select(ids=[author_key])[0]
-    old_book = Book.select(ids=[book_key])[0]
+    old_book = Book.select(ids=book_key)
     assert old_book == books[0]
     assert old_author == books[0].author
     assert old_author != updated_author
 
     Book.update(_id=books[0].title, data={"author": updated_author, "in_stock": new_in_stock})
 
-    book = Book.select(ids=[book_key])[0]
-    author = Author.select(ids=[author_key])[0]
+    book = Book.select(ids=book_key)
+    author = Author.select(ids=author_key)
 
     assert book.author == updated_author
     assert author == updated_author
