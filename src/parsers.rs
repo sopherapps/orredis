@@ -108,6 +108,6 @@ fn extract_str_portions<'a>(
         .trim_end_matches(end_char)
         .split(separator)
         .into_iter()
-        .map(|v| v.trim_end_matches("'").trim_start_matches("'"))
+        .map(|v| v.trim().trim_end_matches("'").trim_start_matches("'"))
         .collect()
 }

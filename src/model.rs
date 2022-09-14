@@ -147,6 +147,7 @@ impl IntoIterator for Model {
 }
 
 /// Class that holds the meta for each given Model
+#[derive(Clone)]
 pub struct ModelMeta {
     pub(crate) fields: HashMap<String, Py<PyAny>>,
     pub(crate) primary_key_field: String,

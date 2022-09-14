@@ -3,9 +3,12 @@ use std::hash::Hash;
 use std::str::FromStr;
 
 use pyo3::exceptions::PyTypeError;
-use pyo3::types::{PyDate, PyTuple, PyType};
-use pyo3::{IntoPy, Py, PyAny, PyDowncastError, PyErr, PyResult, Python};
+use pyo3::prelude::PyModule;
+use pyo3::types::{PyDate, PyType};
+use pyo3::{IntoPy, Py, PyAny, PyDowncastError, PyResult, Python};
 
+use crate::model::ModelMeta;
+use crate::store::find_one_by_raw_id;
 use crate::{parsers, Store};
 
 pub fn str_to_py_obj(store: &mut Store, value: &str, field_type: &PyAny) -> PyResult<Py<PyAny>> {
@@ -89,9 +92,8 @@ pub fn str_to_py_obj(store: &mut Store, value: &str, field_type: &PyAny) -> PyRe
             )))
         } else {
             let model_name = name.to_lowercase();
-            if let Some(_) = store.models.get(&model_name) {
-                let nested_model = store.find_one(&model_name, value.into_py(py))?;
-                Ok(nested_model.into_py(py))
+            if let Some(model_meta) = store.models.clone().get(&model_name) {
+                str_to_nested_model(py, store, model_meta, value)
             } else {
                 Err(PyTypeError::new_err(format!(
                     "type annotation {} is not supported",
@@ -102,7 +104,21 @@ pub fn str_to_py_obj(store: &mut Store, value: &str, field_type: &PyAny) -> PyRe
     })
 }
 
-fn str_to_py_dict<T, U>(py: Python, value: &str) -> Result<Py<PyAny>, PyErr>
+fn str_to_nested_model(
+    py: Python,
+    store: &mut Store,
+    model_meta: &ModelMeta,
+    value: &str,
+) -> PyResult<Py<PyAny>> {
+    let model_type = model_meta.model_type.clone_ref(py);
+    let nested_model = find_one_by_raw_id(store, model_meta.fields.clone(), value)?;
+    match nested_model {
+        None => Ok(py.None()),
+        Some(nested_model) => nested_model.to_subclass_instance(&model_type),
+    }
+}
+
+fn str_to_py_dict<T, U>(py: Python, value: &str) -> PyResult<Py<PyAny>>
 where
     T: FromStr + Hash + std::cmp::Eq + IntoPy<Py<PyAny>>,
     U: FromStr + IntoPy<Py<PyAny>>,
@@ -111,7 +127,7 @@ where
     Ok(v.into_py(py))
 }
 
-fn str_to_py_list<T>(py: Python, value: &str) -> Result<Py<PyAny>, PyErr>
+fn str_to_py_list<T>(py: Python, value: &str) -> PyResult<Py<PyAny>>
 where
     T: FromStr + IntoPy<Py<PyAny>>,
 {
@@ -119,41 +135,45 @@ where
     Ok(v.into_py(py))
 }
 
-fn str_to_py_tuple<T>(py: Python, value: &str) -> Result<Py<PyAny>, PyErr>
+fn str_to_py_tuple<T>(py: Python, value: &str) -> PyResult<Py<PyAny>>
 where
     T: FromStr + IntoPy<Py<PyAny>>,
 {
     let v: Vec<T> = parsers::parse_tuple(value)?;
-    let r = v.into_py(py).extract::<Py<PyTuple>>(py)?;
-    Ok(Py::from(r))
+    let v = v.into_py(py);
+    let builtins = PyModule::import(py, "builtins")?;
+    builtins
+        .getattr("tuple")?
+        .call1((&v,))?
+        .extract::<Py<PyAny>>()
 }
 
-fn str_to_py_datetime(py: Python, value: &str) -> Result<Py<PyAny>, PyErr> {
+fn str_to_py_datetime(py: Python, value: &str) -> PyResult<Py<PyAny>> {
     let datetime = PyDate::from_timestamp(py, parsers::parse_datetime_to_timestamp(value)?)?;
     Ok(Py::from(datetime))
 }
 
-fn str_to_py_date(py: Python, value: &str) -> Result<Py<PyAny>, PyErr> {
+fn str_to_py_date(py: Python, value: &str) -> PyResult<Py<PyAny>> {
     let date = PyDate::from_timestamp(py, parsers::parse_date_to_timestamp(value)?)?;
     Ok(Py::from(date))
 }
 
-fn str_to_py_bool(py: Python, value: &str) -> Result<Py<PyAny>, PyErr> {
+fn str_to_py_bool(py: Python, value: &str) -> PyResult<Py<PyAny>> {
     let v = value.to_lowercase().parse::<bool>()?;
     Ok(v.into_py(py))
 }
 
-fn str_to_py_str(py: Python, value: &str) -> Result<Py<PyAny>, PyErr> {
+fn str_to_py_str(py: Python, value: &str) -> PyResult<Py<PyAny>> {
     let v = value.parse::<String>()?;
     Ok(v.into_py(py))
 }
 
-fn str_to_py_float(py: Python, value: &str) -> Result<Py<PyAny>, PyErr> {
+fn str_to_py_float(py: Python, value: &str) -> PyResult<Py<PyAny>> {
     let v = value.parse::<f64>()?;
     Ok(v.into_py(py))
 }
 
-fn str_to_py_int(py: Python, value: &str) -> Result<Py<PyAny>, PyErr> {
+fn str_to_py_int(py: Python, value: &str) -> PyResult<Py<PyAny>> {
     let v = value.parse::<i64>()?;
     Ok(v.into_py(py))
 }

@@ -227,78 +227,53 @@ impl Store {
     }
 
     pub fn find_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<Py<PyAny>> {
-        let model_meta = self.models.get(model_name);
-        match model_meta {
-            None => Err(PyValueError::new_err(format!(
-                "{} is not a model in this store",
-                model_name
-            ))),
-            Some(model_meta) => {
-                let fields = model_meta.fields.clone();
-                let model_type = &model_meta.model_type.clone();
-                let data = redis_utils::run_without_transaction(
-                    self,
-                    |_store, pipe| -> PyResult<HashMap<String, String>> {
+        execute_if_model_exists(self, model_name, |store, model_meta| {
+            let fields = model_meta.fields.clone();
+            let model_type = model_meta.model_type.clone();
+            let key = format!("{}", id);
+            let primary_key = redis_utils::get_primary_key(model_name, &key);
+            let model = find_one_by_raw_id(store, fields, &primary_key)?;
+            match model {
+                None => Python::with_gil(|py| Ok(py.None())),
+                Some(model) => model.to_subclass_instance(&model_type),
+            }
+        })
+    }
+
+    pub fn find_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<Vec<Py<PyAny>>> {
+        execute_if_model_exists(self, model_name, |store, model_meta| {
+            let fields = model_meta.fields.clone();
+            let model_type = &model_meta.model_type.clone();
+
+            let data = redis_utils::run_without_transaction(
+                store,
+                |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
+                    for id in ids {
                         let key = format!("{}", id);
                         let primary_key = redis_utils::get_primary_key(model_name, &key);
 
                         pipe.hgetall(primary_key);
-
-                        Ok(HashMap::new())
-                    },
-                )?;
-
-                if fields.len() > 0 && data.len() == 0 {
-                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(py.None()) })
-                } else {
-                    let model = redis_utils::parse_model(&fields, self, data)?;
-                    model.to_subclass_instance(model_type)
-                }
-            }
-        }
-    }
-
-    pub fn find_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<Vec<Py<PyAny>>> {
-        let model_meta = self.models.get(model_name);
-        match model_meta {
-            None => Err(PyValueError::new_err(format!(
-                "{} is not a model in this store",
-                model_name
-            ))),
-            Some(model_meta) => {
-                let fields = model_meta.fields.clone();
-                let model_type = &model_meta.model_type.clone();
-
-                let data = redis_utils::run_without_transaction(
-                    self,
-                    |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
-                        for id in ids {
-                            let key = format!("{}", id);
-                            let primary_key = redis_utils::get_primary_key(model_name, &key);
-
-                            pipe.hgetall(primary_key);
-                        }
-
-                        Ok(vec![])
-                    },
-                )?;
-
-                let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
-                let number_of_fields = fields.len();
-                for item in data {
-                    if number_of_fields > 0 && item.len() == 0 {
-                        // skip empty items
-                        continue;
                     }
 
-                    let model = redis_utils::parse_model(&fields, self, item)?;
-                    let item = model.to_subclass_instance(model_type)?;
-                    records.push(item);
+                    Ok(vec![])
+                },
+            )?;
+
+            let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
+            let number_of_fields = fields.len();
+            for item in data {
+                if number_of_fields > 0 && item.len() == 0 {
+                    // skip empty items
+                    continue;
                 }
 
-                Ok(records)
+                let model = redis_utils::parse_model(&fields, store, &item)?;
+                let item = model.to_subclass_instance(model_type)?;
+                records.push(item);
             }
-        }
+
+            Ok(records)
+        })
     }
 
     pub fn find_all(&mut self, model_name: &str) -> PyResult<Vec<Py<PyAny>>> {
@@ -344,7 +319,7 @@ impl Store {
                         continue;
                     }
 
-                    let model = redis_utils::parse_model(&fields, self, item)?;
+                    let model = redis_utils::parse_model(&fields, self, &item)?;
                     let item = model.to_subclass_instance(model_type)?;
                     records.push(item);
                 }
@@ -360,39 +335,18 @@ impl Store {
         id: Py<PyAny>,
         columns: Vec<&str>,
     ) -> PyResult<Py<PyAny>> {
-        let model_meta = self.models.get(model_name);
-        match model_meta {
-            None => Err(PyValueError::new_err(format!(
-                "{} is not a model in this store",
-                model_name
-            ))),
-            Some(model_meta) => {
-                let fields = model_meta.fields.clone();
-                let raw = redis_utils::run_without_transaction(
-                    self,
-                    |_store, pipe| -> PyResult<Vec<String>> {
-                        let key = format!("{}", id);
-                        let primary_key = redis_utils::get_primary_key(model_name, &key);
-                        pipe.cmd("HMGET").arg(primary_key).arg(&columns);
-                        Ok(vec![])
-                    },
-                )?;
-
-                let data = raw
-                    .into_iter()
-                    .zip(&columns)
-                    .map(|(v, k)| (k.to_string(), v))
-                    .collect::<HashMap<String, String>>();
-
-                if fields.len() > 0 && data.len() == 0 {
-                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(py.None()) })
-                } else {
-                    let model = redis_utils::parse_model(&fields, self, data)?;
-                    let dict = model.dict()?;
+        execute_if_model_exists(self, model_name, |store, model_meta| {
+            let fields = model_meta.fields.clone();
+            let key = format!("{}", id);
+            let primary_key = redis_utils::get_primary_key(model_name, &key);
+            let dict = find_one_partial_by_raw_id(store, fields, &primary_key, &columns)?;
+            match dict {
+                None => Python::with_gil(|py| Ok(py.None())),
+                Some(dict) => {
                     Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(dict.into_py(py)) })
                 }
             }
-        }
+        })
     }
 
     pub fn find_partial_many(
@@ -441,7 +395,7 @@ impl Store {
                         continue;
                     }
 
-                    let model = redis_utils::parse_model(&fields, self, item)?;
+                    let model = redis_utils::parse_model(&fields, self, &item)?;
                     let dict = model.dict()?;
                     parsed_data.push(dict);
                 }
@@ -507,13 +461,81 @@ impl Store {
                         continue;
                     }
 
-                    let model = redis_utils::parse_model(&fields, self, item)?;
+                    let model = redis_utils::parse_model(&fields, self, &item)?;
                     let dict = model.dict()?;
                     parsed_data.push(dict);
                 }
 
                 Ok(parsed_data)
             }
+        }
+    }
+}
+
+pub fn execute_if_model_exists<T, F>(store: &mut Store, model_name: &str, closure: F) -> PyResult<T>
+where
+    F: FnOnce(&mut Store, &ModelMeta) -> PyResult<T>,
+{
+    let models = store.models.clone();
+    let model_meta = models.get(model_name).clone();
+    match model_meta {
+        None => Err(PyValueError::new_err(format!(
+            "{} is not a model in this store",
+            model_name
+        ))),
+        Some(model_meta) => closure(store, model_meta),
+    }
+}
+
+pub(crate) fn find_one_by_raw_id(
+    store: &mut Store,
+    fields: HashMap<String, Py<PyAny>>,
+    id: &str,
+) -> PyResult<Option<Model>> {
+    let data = redis_utils::run_without_transaction(
+        store,
+        |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
+            let key = format!("{}", id);
+            pipe.hgetall(key);
+            Ok(vec![])
+        },
+    )?;
+
+    match data.get(0) {
+        None => Ok(None),
+        Some(item) => {
+            let model = redis_utils::parse_model(&fields, store, item)?;
+            Ok(Some(model))
+        }
+    }
+}
+
+pub(crate) fn find_one_partial_by_raw_id(
+    store: &mut Store,
+    fields: HashMap<String, Py<PyAny>>,
+    id: &str,
+    columns: &Vec<&str>,
+) -> PyResult<Option<HashMap<String, Py<PyAny>>>> {
+    let data = redis_utils::run_without_transaction(
+        store,
+        |_store, pipe| -> PyResult<Vec<Vec<String>>> {
+            let key = format!("{}", id);
+            pipe.cmd("HMGET").arg(key).arg(&columns);
+            Ok(vec![])
+        },
+    )?;
+
+    match data.get(0) {
+        None => Ok(None),
+        Some(item) => {
+            let record = item
+                .into_iter()
+                .zip(columns)
+                .map(|(v, k)| (k.to_string(), v.to_string()))
+                .collect::<HashMap<String, String>>();
+            let model = redis_utils::parse_model(&fields, store, &record)?;
+            let dict = model.dict()?;
+            Ok(Some(dict))
         }
     }
 }
