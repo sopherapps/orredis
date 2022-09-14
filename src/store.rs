@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyType;
+use pyo3::types::{IntoPyDict, PyType};
 use pyo3::{Py, PyAny, PyResult, Python};
 use redis::{Commands, ConnectionLike};
 
@@ -226,7 +226,7 @@ impl Store {
         })
     }
 
-    pub fn find_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<Model> {
+    pub fn find_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<Py<PyAny>> {
         let model_meta = self.models.get(model_name);
         match model_meta {
             None => Err(PyValueError::new_err(format!(
@@ -235,6 +235,7 @@ impl Store {
             ))),
             Some(model_meta) => {
                 let fields = model_meta.fields.clone();
+                let model_type = &model_meta.model_type.clone();
                 let data = redis_utils::run_without_transaction(
                     self,
                     |_store, pipe| -> PyResult<HashMap<String, String>> {
@@ -248,12 +249,12 @@ impl Store {
                 )?;
 
                 let model = redis_utils::parse_model(&fields, self, data)?;
-                Ok(model)
+                model.to_subclass_instance(model_type)
             }
         }
     }
 
-    pub fn find_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<Vec<Model>> {
+    pub fn find_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<Vec<Py<PyAny>>> {
         let model_meta = self.models.get(model_name);
         match model_meta {
             None => Err(PyValueError::new_err(format!(
@@ -262,6 +263,8 @@ impl Store {
             ))),
             Some(model_meta) => {
                 let fields = model_meta.fields.clone();
+                let model_type = &model_meta.model_type.clone();
+
                 let data = redis_utils::run_without_transaction(
                     self,
                     |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
@@ -276,18 +279,19 @@ impl Store {
                     },
                 )?;
 
-                let mut models: Vec<Model> = Vec::with_capacity(data.len());
+                let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
                 for item in data {
                     let model = redis_utils::parse_model(&fields, self, item)?;
-                    models.push(model);
+                    let item = model.to_subclass_instance(model_type)?;
+                    records.push(item);
                 }
 
-                Ok(models)
+                Ok(records)
             }
         }
     }
 
-    pub fn find_all(&mut self, model_name: &str) -> PyResult<Vec<Model>> {
+    pub fn find_all(&mut self, model_name: &str) -> PyResult<Vec<Py<PyAny>>> {
         let model_meta = self.models.get(model_name);
         match model_meta {
             None => Err(PyValueError::new_err(format!(
@@ -296,6 +300,8 @@ impl Store {
             ))),
             Some(model_meta) => {
                 let fields = model_meta.fields.clone();
+                let model_type = &model_meta.model_type.clone();
+
                 let conn = self.conn.as_mut();
                 let ids: Vec<String> = match conn {
                     None => Err(PyConnectionError::new_err("redis server disconnected")),
@@ -323,13 +329,14 @@ impl Store {
                     },
                 )?;
 
-                let mut models: Vec<Model> = Vec::with_capacity(data.len());
+                let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
                 for item in data {
                     let model = redis_utils::parse_model(&fields, self, item)?;
-                    models.push(model);
+                    let item = model.to_subclass_instance(model_type)?;
+                    records.push(item);
                 }
 
-                Ok(models)
+                Ok(records)
             }
         }
     }

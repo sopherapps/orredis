@@ -65,12 +65,12 @@ def test_insert_single(store):
     """
     Providing a single Model instance inserts that record in redis
     """
-    book = Book.select(ids=[books[0].title])
+    book = Book.select(ids=books[0].title)
     assert book is None
 
     Book.insert(books[0])
 
-    book = Book.select(ids=[books[0].title])[0]
+    book = Book.select(ids=books[0].title)
     assert books[0] == book
 
 

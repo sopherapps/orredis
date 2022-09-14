@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyType};
+use pyo3::types::{IntoPyDict, PyDict, PyType};
 
 /// The Model is a schema for each record to be saved in a given collection in redis
 #[derive(Clone)]
@@ -87,6 +87,20 @@ impl Model {
         self._data.remove(&name).unwrap();
         Ok(())
     }
+
+    pub fn __str__(slf: PyRef<'_, Self>) -> PyResult<String> {
+        Python::with_gil(|py| -> PyResult<String> {
+            let dict = slf.dict()?;
+            let instance = slf.into_py(py);
+            let instance = instance.as_ref(py);
+            let instance = Py::from(instance);
+            Ok(format!(
+                "{} {:?}",
+                Self::get_instance_model_name(instance)?,
+                &dict
+            ))
+        })
+    }
 }
 
 impl Model {
@@ -112,6 +126,15 @@ impl Model {
             Ok(name)
         })
     }
+
+    /// This converts the model to the native class by consuming the given pointer
+    pub(crate) fn to_subclass_instance(self, model_type: &Py<PyType>) -> PyResult<Py<PyAny>> {
+        Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+            let dict = self.dict()?;
+            let dict = dict.into_py_dict(py);
+            model_type.call(py, (), Some(dict))
+        })
+    }
 }
 
 impl IntoIterator for Model {
@@ -127,6 +150,7 @@ impl IntoIterator for Model {
 pub struct ModelMeta {
     pub(crate) fields: HashMap<String, Py<PyAny>>,
     pub(crate) primary_key_field: String,
+    pub(crate) model_type: Py<PyType>,
 }
 
 impl ModelMeta {
@@ -137,6 +161,7 @@ impl ModelMeta {
                 primary_key_field: model_type
                     .call_method0("get_primary_key_field")?
                     .extract()?,
+                model_type: Py::from(model_type),
             })
         } else {
             Err(PyValueError::new_err(format!(
