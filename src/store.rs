@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyType};
+use pyo3::types::PyType;
 use pyo3::{Py, PyAny, PyResult, Python};
 use redis::{Commands, ConnectionLike};
 
@@ -248,8 +248,12 @@ impl Store {
                     },
                 )?;
 
-                let model = redis_utils::parse_model(&fields, self, data)?;
-                model.to_subclass_instance(model_type)
+                if fields.len() > 0 && data.len() == 0 {
+                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(py.None()) })
+                } else {
+                    let model = redis_utils::parse_model(&fields, self, data)?;
+                    model.to_subclass_instance(model_type)
+                }
             }
         }
     }
@@ -280,7 +284,13 @@ impl Store {
                 )?;
 
                 let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
+                let number_of_fields = fields.len();
                 for item in data {
+                    if number_of_fields > 0 && item.len() == 0 {
+                        // skip empty items
+                        continue;
+                    }
+
                     let model = redis_utils::parse_model(&fields, self, item)?;
                     let item = model.to_subclass_instance(model_type)?;
                     records.push(item);
@@ -303,7 +313,7 @@ impl Store {
                 let model_type = &model_meta.model_type.clone();
 
                 let conn = self.conn.as_mut();
-                let ids: Vec<String> = match conn {
+                let keys: Vec<String> = match conn {
                     None => Err(PyConnectionError::new_err("redis server disconnected")),
                     Some(conn) => {
                         let model_index = redis_utils::get_model_index(model_name);
@@ -318,11 +328,8 @@ impl Store {
                 let data = redis_utils::run_without_transaction(
                     self,
                     |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
-                        for id in ids {
-                            let key = format!("{}", id);
-                            let primary_key = redis_utils::get_primary_key(model_name, &key);
-
-                            pipe.hgetall(primary_key);
+                        for key in keys {
+                            pipe.hgetall(key);
                         }
 
                         Ok(vec![])
@@ -330,7 +337,13 @@ impl Store {
                 )?;
 
                 let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
+                let number_of_fields = fields.len();
                 for item in data {
+                    if number_of_fields > 0 && item.len() == 0 {
+                        // skip empty items
+                        continue;
+                    }
+
                     let model = redis_utils::parse_model(&fields, self, item)?;
                     let item = model.to_subclass_instance(model_type)?;
                     records.push(item);
@@ -346,7 +359,7 @@ impl Store {
         model_name: &str,
         id: Py<PyAny>,
         columns: Vec<&str>,
-    ) -> PyResult<HashMap<String, Py<PyAny>>> {
+    ) -> PyResult<Py<PyAny>> {
         let model_meta = self.models.get(model_name);
         match model_meta {
             None => Err(PyValueError::new_err(format!(
@@ -371,8 +384,13 @@ impl Store {
                     .map(|(v, k)| (k.to_string(), v))
                     .collect::<HashMap<String, String>>();
 
-                let model = redis_utils::parse_model(&fields, self, data)?;
-                model.dict()
+                if fields.len() > 0 && data.len() == 0 {
+                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(py.None()) })
+                } else {
+                    let model = redis_utils::parse_model(&fields, self, data)?;
+                    let dict = model.dict()?;
+                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(dict.into_py(py)) })
+                }
             }
         }
     }
@@ -416,7 +434,13 @@ impl Store {
 
                 let mut parsed_data: Vec<HashMap<String, Py<PyAny>>> =
                     Vec::with_capacity(data.len());
+                let number_of_fields = fields.len();
                 for item in data {
+                    if number_of_fields > 0 && item.len() == 0 {
+                        // skip empty items
+                        continue;
+                    }
+
                     let model = redis_utils::parse_model(&fields, self, item)?;
                     let dict = model.dict()?;
                     parsed_data.push(dict);
@@ -441,7 +465,7 @@ impl Store {
             Some(model_meta) => {
                 let fields = model_meta.fields.clone();
                 let conn = self.conn.as_mut();
-                let ids: Vec<String> = match conn {
+                let keys: Vec<String> = match conn {
                     None => Err(PyConnectionError::new_err("redis server disconnected")),
                     Some(conn) => {
                         let model_index = redis_utils::get_model_index(model_name);
@@ -456,10 +480,8 @@ impl Store {
                 let raw = redis_utils::run_without_transaction(
                     self,
                     |_store, pipe| -> PyResult<Vec<Vec<String>>> {
-                        for id in ids {
-                            let key = format!("{}", id);
-                            let primary_key = redis_utils::get_primary_key(model_name, &key);
-                            pipe.cmd("HMGET").arg(primary_key).arg(&columns);
+                        for key in keys {
+                            pipe.cmd("HMGET").arg(key).arg(&columns);
                         }
 
                         Ok(vec![])
@@ -478,7 +500,13 @@ impl Store {
 
                 let mut parsed_data: Vec<HashMap<String, Py<PyAny>>> =
                     Vec::with_capacity(data.len());
+                let number_of_fields = fields.len();
                 for item in data {
+                    if number_of_fields > 0 && item.len() == 0 {
+                        // skip empty items
+                        continue;
+                    }
+
                     let model = redis_utils::parse_model(&fields, self, item)?;
                     let dict = model.dict()?;
                     parsed_data.push(dict);

@@ -11,5 +11,4 @@ crate-type = ["cdylib"]
 [dependencies]
 pyo3 = { version = "0.16.5", features = ["extension-module"] }
 redis = { version = "0.21.*" }
-serde = { version = "1", default_features = false }
-serde_json = { version = "1.0", default_features = false, features = ["std", "float_roundtrip"] }
+chrono = "0.4"

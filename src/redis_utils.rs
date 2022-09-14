@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 
 use pyo3::exceptions::{PyConnectionError, PyValueError};
-use pyo3::types::PyType;
-use pyo3::{IntoPy, Py, PyAny, PyDowncastError, PyResult, Python};
+use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::store::Record;
-use crate::{Model, Store};
+use crate::{pyparsers, Model, Store};
 
 /// Opens a connection to redis given the url
 pub(crate) fn connect_to_redis(url: &str) -> redis::RedisResult<redis::Connection> {
@@ -17,7 +16,7 @@ pub(crate) fn connect_to_redis(url: &str) -> redis::RedisResult<redis::Connectio
 pub(crate) fn run_in_transaction<T, F>(store: &mut Store, f: F) -> PyResult<T>
 where
     F: FnOnce(&Store, &mut redis::Pipeline) -> PyResult<T>,
-    T: redis::FromRedisValue + serde::ser::Serialize,
+    T: redis::FromRedisValue,
 {
     let mut pipe = redis::pipe();
     // attempt to open a transaction in a pipeline manually
@@ -43,7 +42,7 @@ where
 pub(crate) fn run_without_transaction<T, F>(store: &mut Store, f: F) -> PyResult<T>
 where
     F: FnOnce(&Store, &mut redis::Pipeline) -> PyResult<T>,
-    T: redis::FromRedisValue + serde::ser::Serialize,
+    T: redis::FromRedisValue,
 {
     let mut pipe = redis::pipe();
     f(store, &mut pipe)?;
@@ -140,6 +139,7 @@ fn serialize_to_key_value_pairs(
     })
 }
 
+/// Converts a hashmap into a Model instance
 pub(crate) fn parse_model(
     fields: &HashMap<String, Py<PyAny>>,
     store: &mut Store,
@@ -153,7 +153,7 @@ pub(crate) fn parse_model(
                 None => {}
                 Some(field_type) => {
                     let field_type = field_type.as_ref(py);
-                    let value = str_to_py_type(store, &v, field_type)?;
+                    let value = pyparsers::str_to_py_obj(store, &v, field_type)?;
                     _data.insert(k, value);
                 }
             }
@@ -163,74 +163,4 @@ pub(crate) fn parse_model(
     })?;
 
     Ok(Model { _data })
-}
-
-fn str_to_py_type(store: &mut Store, value: &str, field_type: &PyAny) -> PyResult<Py<PyAny>> {
-    Python::with_gil(|py| -> PyResult<Py<PyAny>> {
-        let field_name: Result<&PyType, PyDowncastError> = field_type.downcast::<PyType>();
-        let field_name = match field_name {
-            Ok(v) => {
-                let v = v.name()?;
-                v.to_string()
-            }
-            Err(_) => field_type.to_string(),
-        };
-
-        match field_name.as_str() {
-            "int" => {
-                let v = value.parse::<i64>()?;
-                Ok(v.into_py(py))
-            }
-            "float" => {
-                let v = value.parse::<f64>()?;
-                Ok(v.into_py(py))
-            }
-            "str" => Ok(value.into_py(py)),
-            "typing.List[str]" => {
-                let v: Vec<String> = serde_json::from_str(value).or(Err(PyValueError::new_err(
-                    format!("{} is not of typing.List[str]", &value),
-                )))?;
-                Ok(v.into_py(py))
-            }
-            "typing.List[int]" => {
-                let v: Vec<i64> = serde_json::from_str(value).or(Err(PyValueError::new_err(
-                    format!("{} is not of typing.List[int]", &value),
-                )))?;
-                Ok(v.into_py(py))
-            }
-            "typing.List[float]" => {
-                let v: Vec<f64> = serde_json::from_str(value).or(Err(PyValueError::new_err(
-                    format!("{} is not of typing.List[float]", &value),
-                )))?;
-                Ok(v.into_py(py))
-            }
-            "typing.Dict[str, str]" => {
-                let v: HashMap<String, String> = serde_json::from_str(value).or(Err(
-                    PyValueError::new_err(format!("{} is not of typing.Dict[str, str]", &value)),
-                ))?;
-                Ok(v.into_py(py))
-            }
-            "typing.Dict[str, int]" => {
-                let v: HashMap<String, i64> = serde_json::from_str(value).or(Err(
-                    PyValueError::new_err(format!("{} is not of typing.Dict[str, int]", &value)),
-                ))?;
-                Ok(v.into_py(py))
-            }
-            "typing.Dict[str, float]" => {
-                let v: HashMap<String, f64> = serde_json::from_str(value).or(Err(
-                    PyValueError::new_err(format!("{} is not of typing.Dict[str, float]", &value)),
-                ))?;
-                Ok(v.into_py(py))
-            } // etc
-            name => {
-                let name = name.to_lowercase();
-                if let Some(_) = store.models.get(&name) {
-                    let nested_model = store.find_one(&name, value.into_py(py))?;
-                    Ok(nested_model.into_py(py))
-                } else {
-                    Ok(value.into_py(py))
-                }
-            }
-        }
-    })
 }

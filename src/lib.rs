@@ -1,10 +1,14 @@
-pub mod model;
-mod redis_utils;
-pub mod store;
+use pyo3::prelude::*;
+
+use store::Store;
 
 use crate::model::Model;
-use pyo3::prelude::*;
-use store::Store;
+
+pub mod model;
+mod parsers;
+mod pyparsers;
+mod redis_utils;
+pub mod store;
 
 /// A Python module implemented in Rust.
 #[pymodule]

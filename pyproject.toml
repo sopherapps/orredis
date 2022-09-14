@@ -11,9 +11,6 @@ classifiers = [
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
 ]
-dependencies = [
-    'pydantic >= 1.10.2',
-]
 
 [project.optional-dependencies]
 tests = [

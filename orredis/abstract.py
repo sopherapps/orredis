@@ -56,5 +56,9 @@ class BaseModel(Model):
             elif isinstance(columns, list):
                 return cls._store.find_one_partial(model_name=cls.get_name(), columns=columns, id=ids)
 
+    def __str__(self) -> str:
+        """String representation of the object"""
+        return f"{self.__class__.__qualname__} {self.dict()}"
+
     class Config:
         arbitrary_types_allowed = True
