@@ -44,7 +44,8 @@ def test_bulk_insert(store):
     """Providing a list of Model instances to the insert method inserts the records in redis"""
     Book.insert(books)
     books_in_store = Book.select()
-    assert books == books_in_store
+    print(f"books: {[f'{bk}' for bk in books]}\n\nbooks_in_store: {[f'{bk}' for bk in books_in_store]}")
+    assert sorted(books, key=lambda x: x.title) == sorted(books_in_store, key=lambda x: x.title)
 
 
 @pytest.mark.parametrize("store", redis_store_fixture)
@@ -147,6 +148,7 @@ def test_update(store):
 
     old_book = Book.select(ids=title)
     assert old_book == books[0]
+    print(f"author names: {new_author.name}, {old_book.author.name}")
     assert old_book.author != new_author
 
     Book.update(_id=title, data={"author": new_author, "in_stock": new_in_stock})

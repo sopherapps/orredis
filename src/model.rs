@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDict, PyType};
+use pyo3::types::{IntoPyDict, PyBool, PyDict, PyType};
 
 /// The Model is a schema for each record to be saved in a given collection in redis
 #[derive(Clone)]
@@ -136,6 +136,68 @@ impl Model {
     pub fn __delattr__(&mut self, name: String) -> PyResult<()> {
         self._data.remove(&name);
         Ok(())
+    }
+
+    pub fn __eq__(slf: PyRef<'_, Self>, other: Py<PyAny>) -> PyResult<bool> {
+        Python::with_gil(|py| -> PyResult<bool> {
+            let other = other.into_py(py);
+            let other_type = other.as_ref(py).get_type().name()?;
+            let other_model: Model = other.extract(py)?;
+            let this_data = slf._data.clone();
+            let other_data = other_model._data;
+            let instance = slf.into_py(py);
+            let instance = instance.as_ref(py);
+            let this_type = instance.get_type().name()?;
+            let fields = instance.getattr("get_fields")?.call0()?;
+            let fields: HashMap<String, Py<PyAny>> = fields.extract()?;
+
+            if this_type != other_type {
+                return Ok(false);
+            }
+
+            for (k, _) in fields {
+                let this_value = this_data.get(&k);
+                if let Some(other) = &other_data.get(&k) {
+                    // if value exists in other_data, check if it equal to the value in this_data
+                    match this_value {
+                        // if value does not exist on this, then this_data and other_data are not equal
+                        None => return Ok(false),
+                        Some(v) => {
+                            let v = v.into_py(py);
+                            let other = other.into_py(py);
+                            let v_eq_method = v.getattr(py, "__eq__")?;
+
+                            let bool_value = match v_eq_method.call1(py, (&other,)) {
+                                Ok(value) => {
+                                    let value_as_str = value.to_string().to_lowercase();
+                                    if value_as_str == "notimplemented" {
+                                        let other_eq_method = other.getattr(py, "__eq__")?;
+                                        match other_eq_method.call1(py, (&v,)) {
+                                            Ok(value) => value,
+                                            Err(_) => PyBool::new(py, false).into_py(py),
+                                        }
+                                    } else {
+                                        value
+                                    }
+                                }
+                                Err(e) => Err(e)?,
+                            };
+
+                            let bool_value: bool = bool_value.extract(py)?;
+
+                            if !bool_value {
+                                return Ok(bool_value);
+                            }
+                        }
+                    }
+                } else if let Some(_) = this_value {
+                    // if value does not exist on other_data but exists on this_data, the two are not equal
+                    return Ok(false);
+                }
+            }
+
+            Ok(true)
+        })
     }
 
     pub fn __str__(slf: PyRef<'_, Self>) -> PyResult<String> {
