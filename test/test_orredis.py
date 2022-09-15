@@ -80,12 +80,12 @@ def test_insert_single_nested(store):
     Providing a single Model instance upserts also any nested model into redis
     """
     key = books[0].author.name
-    author = Author.select(ids=[key])
+    author = Author.select(ids=key)
     assert author is None
 
     Book.insert(books[0])
 
-    author = Author.select(ids=[key])[0]
+    author = Author.select(ids=key)
     assert books[0].author == author
 
 
