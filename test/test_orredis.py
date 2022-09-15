@@ -119,7 +119,8 @@ def test_select_some_columns(store):
             if column == 'author':
                 assert book_in_response[column] == getattr(book, column)
             else:
-                assert f"{book_in_response[column]}" == f"{getattr(book, column)}"
+                v = getattr(book, column)
+                assert f"{book_in_response[column]}" == f"{v}"
 
 
 @pytest.mark.parametrize("store", redis_store_fixture)
@@ -144,14 +145,14 @@ def test_update(store):
     new_author = Author(name='John Doe', active_years=(2000, 2009))
     new_author_key = new_author.name
 
-    old_book = Book.select(ids=[title])
+    old_book = Book.select(ids=title)
     assert old_book == books[0]
     assert old_book.author != new_author
 
     Book.update(_id=title, data={"author": new_author, "in_stock": new_in_stock})
 
     book = Book.select(ids=title)
-    author = Author.select(ids=[new_author_key])[0]
+    author = Author.select(ids=new_author_key)
     assert book.author == new_author
     assert author == new_author
     assert book.title == old_book.title
@@ -209,6 +210,6 @@ def test_delete_multiple(store):
     books_left = Book.select(ids=ids_to_leave_intact)
     authors_left = sorted(Author.select(), key=lambda x: x.name)
 
-    assert deleted_books_select_response is None
+    assert deleted_books_select_response == []
     assert books_left == books_to_be_left_in_db
     assert authors_left == sorted(authors.values(), key=lambda x: x.name)

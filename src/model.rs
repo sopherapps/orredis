@@ -24,10 +24,60 @@ impl Model {
                 _data: Default::default(),
             }),
             |k| {
-                let _data: HashMap<String, Py<PyAny>> = k.extract()?;
+                let mut _data: HashMap<String, Py<PyAny>> = k.extract()?;
                 Ok(Model { _data })
             },
         )
+    }
+
+    pub fn overwrite(&mut self, kwargs: &PyDict) -> PyResult<()> {
+        let _data: HashMap<String, Py<PyAny>> = kwargs.extract()?;
+        self._data = _data;
+        Ok(())
+    }
+
+    #[classmethod]
+    fn set_default_values(cls: &PyType, instance: Py<PyAny>) -> PyResult<()> {
+        Python::with_gil(|py| {
+            let defaults = match cls.getattr("__defaults") {
+                Ok(defaults) => defaults.extract::<HashMap<String, Py<PyAny>>>(),
+                Err(_) => {
+                    let mut defaults: HashMap<String, Py<PyAny>> = Default::default();
+                    let fields = cls.getattr("get_fields")?.call0()?;
+                    let fields: HashMap<String, Py<PyAny>> = fields.extract()?;
+
+                    for (key, _) in fields {
+                        if let Ok(value) = cls.getattr(&key) {
+                            defaults.insert(key.clone(), value.into_py(py));
+                        }
+
+                        // delete the field from the class so that __getattribute__()
+                        // may not keep skipping our custom __getattr__()
+                        cls.delattr(&key).ok();
+                    }
+
+                    // update the __defaults attribute on the class
+                    cls.setattr("__defaults", defaults.clone())?;
+
+                    Ok(defaults)
+                }
+            }?;
+
+            let instance = instance.as_ref(py);
+            let mut data: HashMap<String, Py<PyAny>> =
+                instance.getattr("dict")?.call0()?.extract()?;
+
+            for (key, value) in defaults {
+                if let None = data.get(&key) {
+                    data.insert(key, value);
+                }
+            }
+
+            let dict: &PyDict = data.into_py_dict(py);
+            instance.getattr("overwrite")?.call1((dict,))?;
+
+            Ok(())
+        })
     }
 
     #[classmethod]
@@ -79,12 +129,12 @@ impl Model {
     }
 
     pub fn __setattr__(&mut self, name: String, value: Py<PyAny>) -> PyResult<()> {
-        self._data.insert(name, value).unwrap();
+        self._data.insert(name, value);
         Ok(())
     }
 
     pub fn __delattr__(&mut self, name: String) -> PyResult<()> {
-        self._data.remove(&name).unwrap();
+        self._data.remove(&name);
         Ok(())
     }
 

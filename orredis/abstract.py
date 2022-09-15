@@ -17,6 +17,11 @@ class BaseModel(Model):
     _primary_key_field: str
     _life_span: Optional[int] = None
 
+    def __new__(cls, *args, **kwargs):
+        instance = super().__new__(cls, *args, **kwargs)
+        cls.set_default_values(instance)
+        return instance
+
     @classmethod
     def insert(cls, data: Union[List["BaseModel"], "BaseModel"], life_span_seconds: Optional[float] = None):
         life_span = life_span_seconds if life_span_seconds is not None else cls._life_span
