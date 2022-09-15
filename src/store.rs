@@ -347,8 +347,12 @@ pub(crate) fn find_one_by_raw_id(
     match data.get(0) {
         None => Ok(None),
         Some(item) => {
-            let model = redis_utils::parse_model(&fields, store, item)?;
-            Ok(Some(model))
+            if item.len() == 0 && fields.len() > 0 {
+                Ok(None)
+            } else {
+                let model = redis_utils::parse_model(&fields, store, item)?;
+                Ok(Some(model))
+            }
         }
     }
 }
@@ -371,14 +375,18 @@ pub(crate) fn find_one_partial_by_raw_id(
     match data.get(0) {
         None => Ok(None),
         Some(item) => {
-            let record = item
-                .into_iter()
-                .zip(columns)
-                .map(|(v, k)| (k.to_string(), v.to_string()))
-                .collect::<HashMap<String, String>>();
-            let model = redis_utils::parse_model(&fields, store, &record)?;
-            let dict = model.dict()?;
-            Ok(Some(dict))
+            if item.len() == 0 && columns.len() > 0 {
+                Ok(None)
+            } else {
+                let record = item
+                    .into_iter()
+                    .zip(columns)
+                    .map(|(v, k)| (k.to_string(), v.to_string()))
+                    .collect::<HashMap<String, String>>();
+                let model = redis_utils::parse_model(&fields, store, &record)?;
+                let dict = model.dict()?;
+                Ok(Some(dict))
+            }
         }
     }
 }

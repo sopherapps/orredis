@@ -2,11 +2,13 @@
 Module containing the abstract classes.
 These ease when cross-referring classes that have cyclic dependencies
 """
+import dataclasses
 from typing import Optional, Dict, Any, Union, List
 
 from orredis.orredis import Store, Model
 
 
+@dataclasses.dataclass(init=False)
 class BaseModel(Model):
     """
     An abstract class to help with typings for Model class
@@ -60,6 +62,3 @@ class BaseModel(Model):
     def __str__(self) -> str:
         """String representation of the object"""
         return f"{self.__class__.__qualname__} {self.dict()}"
-
-    class Config:
-        arbitrary_types_allowed = True
