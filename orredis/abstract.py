@@ -39,22 +39,23 @@ class BaseModel(Model):
         raise ValueError("ids should be either a list or any non-None value")
 
     @classmethod
-    def select(cls, columns: Optional[List[str]] = None, ids: Optional[Union[List[Any], Any]] = None):
+    def select(cls, columns: Optional[List[str]] = None, ids: Optional[Union[List[Any], Any]] = None) -> Optional[
+        Union["BaseModel", List["BaseModel"]]]:
         if ids is None:
             if columns is None:
                 return cls._store.find_all(model_name=cls.get_name())
             elif isinstance(columns, list):
-                return cls._store.find_all_partial(model_name=cls.get_name(), columns=columns)
+                return cls._store.find_partial_all(model_name=cls.get_name(), columns=columns)
         elif isinstance(ids, list):
             if columns is None:
                 return cls._store.find_many(model_name=cls.get_name(), ids=ids)
             elif isinstance(columns, list):
-                return cls._store.find_all_partial(model_name=cls.get_name(), columns=columns, ids=ids)
+                return cls._store.find_partial_many(model_name=cls.get_name(), columns=columns, ids=ids)
         else:
             if columns is None:
                 return cls._store.find_one(model_name=cls.get_name(), id=ids)
             elif isinstance(columns, list):
-                return cls._store.find_one_partial(model_name=cls.get_name(), columns=columns, id=ids)
+                return cls._store.find_partial_one(model_name=cls.get_name(), columns=columns, id=ids)
 
     def __str__(self) -> str:
         """String representation of the object"""
