@@ -33,7 +33,7 @@ class BaseModel(Model):
     def update(cls, _id: Any, data: Dict[str, Any],
                life_span_seconds: Optional[float] = None):
         life_span = life_span_seconds if life_span_seconds is not None else cls._life_span
-        return cls._store.update(model_name=cls.get_name(), id=_id, data=data, life_span=life_span, )
+        return cls._store.update_one(model_name=cls.get_name(), id=_id, data=data, life_span=life_span, )
 
     @classmethod
     def delete(cls, ids: Union[Any, List[Any]]):

@@ -148,7 +148,6 @@ def test_update(store):
 
     old_book = Book.select(ids=title)
     assert old_book == books[0]
-    print(f"author names: {new_author.name}, {old_book.author.name}")
     assert old_book.author != new_author
 
     Book.update(_id=title, data={"author": new_author, "in_stock": new_in_stock})
