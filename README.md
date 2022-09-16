@@ -205,3 +205,41 @@ Name (time in us)                                Min         Max      Mean   Std
 test_benchmark_bulk_delete[redis_store]     146.5190  1,668.0070  186.7605  67.9552  172.5450  37.2472   162;182        5.3545    2439           1
 --------------------------------------------------------------------------------------------------------------------------------------------------
 ```
+
+## How to test
+
+- Clone the repo and enter its root folder
+
+  ```bash
+  git clone https://github.com/sopherapps/orredis.git && cd orredis
+  ```
+
+- Create a virtual environment and activate it
+
+  ```bash
+  virtualenv -p /usr/bin/python3.7 env && source env/bin/activate
+  ```
+
+- Install the dependencies
+
+  ```bash
+  pip install -r requirements.txt
+  ```
+
+- Install the package in the virtual environment
+
+  ```bash
+  maturin develop
+  ```
+
+- Run the tests command
+
+  ```bash
+  pytest --benchmark-disable
+  ```
+
+- Run benchmarks
+
+  ```bash
+  pytest --benchmark-compare --benchmark-autosave
+  ```
