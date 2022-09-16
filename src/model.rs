@@ -231,12 +231,12 @@ impl Model {
     }
 
     pub(crate) fn get_instance_model_name(value: Py<PyAny>) -> PyResult<String> {
-        Python::with_gil(|py| -> PyResult<String> {
+        let name = Python::with_gil(|py| {
             let value = value.as_ref(py).get_type();
-            let name: String = value.getattr("__name__")?.extract()?;
-            let name = name.to_lowercase();
-            Ok(name)
-        })
+            value.getattr("__name__")?.extract::<String>()
+        })?;
+        let name = name.to_lowercase();
+        Ok(name)
     }
 
     /// This converts the model to the native class by consuming the given pointer
@@ -288,13 +288,10 @@ impl ModelMeta {
 fn is_model(model_type: &PyType) -> PyResult<bool> {
     Python::with_gil(|py| -> PyResult<bool> {
         let builtins = PyModule::import(py, "builtins")?;
-        let sample_model = Model::empty();
-        let sample_model = sample_model.into_py(py);
-        let sample_model = sample_model.as_ref(py);
-        let ref_model_type = sample_model.get_type();
+        let model_type_ref = PyType::new::<Model>(py);
         let is_model: bool = builtins
             .getattr("issubclass")?
-            .call((model_type, ref_model_type), None)?
+            .call((model_type, model_type_ref), None)?
             .extract()?;
         Ok(is_model)
     })

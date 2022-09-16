@@ -122,21 +122,19 @@ impl Store {
     ) -> PyResult<()> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
             redis_utils::run_in_transaction(store, |store_in_tx, pipe| {
-                Python::with_gil(|py| {
-                    let data: Model = data.extract(py)?;
-                    let key = data.get(&model_meta.primary_key_field)?;
-                    let key = format!("{}", key);
-                    let record = Record::Full { data };
-                    redis_utils::insert_on_pipeline(
-                        store_in_tx,
-                        pipe,
-                        model_name,
-                        life_span,
-                        &key,
-                        &record,
-                    )?;
-                    Ok(())
-                })
+                let data = Python::with_gil(|py| -> PyResult<Model> { data.extract::<Model>(py) })?;
+                let key = data.get(&model_meta.primary_key_field)?;
+                let key = format!("{}", key);
+                let record = Record::Full { data };
+                redis_utils::insert_on_pipeline(
+                    store_in_tx,
+                    pipe,
+                    model_name,
+                    life_span,
+                    &key,
+                    &record,
+                )?;
+                Ok(())
             })
         })
     }
@@ -338,8 +336,7 @@ pub(crate) fn find_one_by_raw_id(
     let data = redis_utils::run_without_transaction(
         store,
         |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
-            let key = format!("{}", id);
-            pipe.hgetall(key);
+            pipe.hgetall(id.to_string());
             Ok(vec![])
         },
     )?;

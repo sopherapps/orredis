@@ -87,11 +87,13 @@ pub fn insert_on_pipeline(
 }
 
 /// Gets the index key of the virtual table.
+#[inline]
 pub(crate) fn get_model_index(model_name: &str) -> String {
     format!("{}__index", model_name)
 }
 
 /// Gets the primary key for the given table-key combination
+#[inline]
 pub(crate) fn get_primary_key(model_name: &str, key: &str) -> String {
     format!("{}_%&_{}", model_name, key)
 }
@@ -102,42 +104,43 @@ fn serialize_to_key_value_pairs(
     raw_data: &Record,
     life_span: Option<usize>,
 ) -> PyResult<Vec<(String, String)>> {
-    Python::with_gil(|py| -> PyResult<Vec<(String, String)>> {
-        let mut data: Vec<(String, String)> = Default::default();
-        let raw_data = match raw_data {
-            Record::Full { data } => data.dict()?,
-            Record::Partial { data } => data.clone(),
-        };
+    let mut data: Vec<(String, String)> = Default::default();
+    let raw_data = match raw_data {
+        Record::Full { data } => data.dict()?,
+        Record::Partial { data } => data.clone(),
+    };
 
-        for (k, v) in raw_data {
+    for (k, v) in raw_data {
+        let model_result: PyResult<Model> = Python::with_gil(|py| {
             let v_ptr = v.as_ref(py);
-            let model_result: PyResult<Model> = v_ptr.extract();
-            match model_result {
-                Ok(model) => {
-                    let model_name = Model::get_instance_model_name(v)?;
-                    let model_meta =
-                        store
-                            .models
-                            .get(&model_name)
-                            .ok_or(PyValueError::new_err(format!(
-                                "{} does not exist on this store",
-                                model_name
-                            )))?;
+            v_ptr.extract()
+        });
 
-                    let key = model.get(&model_meta.primary_key_field)?;
-                    let key = format!("{}", key);
-                    let record = Record::Full { data: model };
-                    let foreign_key =
-                        insert_on_pipeline(store, pipe, &model_name, life_span, &key, &record)?;
-                    data.push((k, foreign_key));
-                }
-                Err(_) => {
-                    data.push((k, format!("{}", v)));
-                }
+        match model_result {
+            Ok(model) => {
+                let model_name = Model::get_instance_model_name(v)?;
+                let model_meta =
+                    store
+                        .models
+                        .get(&model_name)
+                        .ok_or(PyValueError::new_err(format!(
+                            "{} does not exist on this store",
+                            model_name
+                        )))?;
+
+                let key = model.get(&model_meta.primary_key_field)?;
+                let key = format!("{}", key);
+                let record = Record::Full { data: model };
+                let foreign_key =
+                    insert_on_pipeline(store, pipe, &model_name, life_span, &key, &record)?;
+                data.push((k, foreign_key));
+            }
+            Err(_) => {
+                data.push((k, format!("{}", v)));
             }
         }
-        Ok(data)
-    })
+    }
+    Ok(data)
 }
 
 /// Converts a hashmap into a Model instance
@@ -147,21 +150,16 @@ pub(crate) fn parse_model(
     data: &HashMap<String, String>,
 ) -> PyResult<Model> {
     let mut _data: HashMap<String, Py<PyAny>> = HashMap::with_capacity(data.len());
-    Python::with_gil(|py| -> PyResult<()> {
-        for (k, v) in data {
-            let field_type = fields.get(k);
-            match field_type {
-                None => {}
-                Some(field_type) => {
-                    let field_type = field_type.as_ref(py);
-                    let value = pyparsers::str_to_py_obj(store, &v, field_type)?;
-                    _data.insert(k.clone(), value);
-                }
+    for (k, v) in data {
+        let field_type = fields.get(k);
+        match field_type {
+            None => {}
+            Some(field_type) => {
+                let value = pyparsers::str_to_py_obj(store, &v, field_type)?;
+                _data.insert(k.clone(), value);
             }
         }
-
-        Ok(())
-    })?;
+    }
 
     Ok(Model { _data })
 }
