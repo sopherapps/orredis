@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::str;
 
 use pyo3::exceptions::{PyConnectionError, PyValueError};
 use pyo3::{Py, PyAny, PyResult, Python};
@@ -143,18 +144,18 @@ fn serialize_to_key_value_pairs(
 pub(crate) fn parse_model(
     fields: &HashMap<String, Py<PyAny>>,
     store: &mut Store,
-    data: HashMap<String, String>,
+    data: &HashMap<String, String>,
 ) -> PyResult<Model> {
     let mut _data: HashMap<String, Py<PyAny>> = HashMap::with_capacity(data.len());
     Python::with_gil(|py| -> PyResult<()> {
         for (k, v) in data {
-            let field_type = fields.get(&k);
+            let field_type = fields.get(k);
             match field_type {
                 None => {}
                 Some(field_type) => {
                     let field_type = field_type.as_ref(py);
                     let value = pyparsers::str_to_py_obj(store, &v, field_type)?;
-                    _data.insert(k, value);
+                    _data.insert(k.clone(), value);
                 }
             }
         }

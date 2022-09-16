@@ -78,11 +78,15 @@ where
     Ok(v)
 }
 
-/// Parses datetime strings into timestamps using the ISO 8601 format which is the default format
-/// for python i.e. "YYYY-MM-DDTHH:MM:SS.mmmmmm" (python) or "%Y-%m-%dT%H:%M%S.%f" (rust)
+/// Parses datetime strings into timestamps using the "YYYY-MM-DD HH:MM:SS.mmmmmm" format which was the default format
+/// on my PC :-)
+/// for python i.e. "YYYY-MM-DD HH:MM:SS.mmmmmm" (python) or "%Y-%m-%d %H:%M:%S.%f" (rust)
 pub fn parse_datetime_to_timestamp(value: &str) -> PyResult<i64> {
-    let datetime = NaiveDateTime::parse_from_str(value, "%Y-%m-%dT%H:%M%S.%f").or(Err(
-        PyValueError::new_err(format!("error parsing {} as ISO 8601 date", value)),
+    let datetime = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.6f").or(Err(
+        PyValueError::new_err(format!(
+            "error parsing {} as 'YYYY-MM-DD HH:MM:SS.mmmmmm'",
+            value
+        )),
     ))?;
     Ok(datetime.timestamp())
 }
@@ -108,6 +112,6 @@ fn extract_str_portions<'a>(
         .trim_end_matches(end_char)
         .split(separator)
         .into_iter()
-        .map(|v| v.trim_end_matches("'").trim_start_matches("'"))
+        .map(|v| v.trim().trim_end_matches("'").trim_start_matches("'"))
         .collect()
 }
