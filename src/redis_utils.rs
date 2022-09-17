@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::str;
 
 use pyo3::exceptions::{PyConnectionError, PyValueError};
@@ -6,6 +7,12 @@ use pyo3::{Py, PyAny, PyResult, Python};
 
 use crate::store::Record;
 use crate::{pyparsers, Model, Store};
+
+macro_rules! py_value_error {
+    ($v:expr, $det:expr) => {
+        PyValueError::new_err(format!("{:?} (value was {:?})", $det, $v))
+    };
+}
 
 /// Opens a connection to redis given the url
 pub(crate) fn connect_to_redis(url: &str) -> redis::RedisResult<redis::Connection> {
@@ -43,7 +50,7 @@ where
 pub(crate) fn run_without_transaction<T, F>(store: &mut Store, f: F) -> PyResult<T>
 where
     F: FnOnce(&Store, &mut redis::Pipeline) -> PyResult<T>,
-    T: redis::FromRedisValue,
+    T: redis::FromRedisValue + Debug,
 {
     let mut pipe = redis::pipe();
     f(store, &mut pipe)?;
@@ -57,6 +64,52 @@ where
                 .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
 
             Ok(result)
+        }
+    }
+}
+
+/// Runs an EVAL
+pub(crate) fn run_script<F>(
+    store: &mut Store,
+    fields: &HashMap<String, Py<PyAny>>,
+    f: F,
+) -> PyResult<Vec<HashMap<String, Py<PyAny>>>>
+where
+    F: FnOnce(&Store, &mut redis::Pipeline) -> PyResult<Vec<HashMap<String, Py<PyAny>>>>,
+{
+    let mut pipe = redis::pipe();
+    f(store, &mut pipe)?;
+
+    let conn = store.conn.as_mut();
+    match conn {
+        None => Err(PyConnectionError::new_err("redis server disconnected")),
+        Some(conn) => {
+            let result: redis::Value = pipe
+                .query(conn)
+                .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
+
+            let mut list_of_results: Vec<HashMap<String, Py<PyAny>>> = Default::default();
+
+            let results = result
+                .as_sequence()
+                .ok_or_else(|| {
+                    py_value_error!(result, "Response from redis is of unexpected shape")
+                })?
+                .get(0)
+                .ok_or_else(|| {
+                    py_value_error!(result, "Response from redis is of unexpected shape")
+                })?
+                .as_sequence()
+                .ok_or_else(|| {
+                    py_value_error!(result, "Response from redis is of unexpected shape")
+                })?;
+
+            for item in results {
+                let record = pyparsers::parse_redis_single_raw_value(store, fields, item)?;
+                list_of_results.push(record);
+            }
+
+            Ok(list_of_results)
         }
     }
 }

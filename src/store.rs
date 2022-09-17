@@ -9,6 +9,9 @@ use redis::{Commands, ConnectionLike};
 use crate::model::ModelMeta;
 use crate::{redis_utils, Model};
 
+const GET_ALL_BUT_SOME_COLS_NESTED_SCRIPT: &str = r"local filtered = {} local cursor = '0' local table_unpack = table.unpack or unpack local columns = {} local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if i > 1 then if args_tracker[k] then nested_columns[k] = true else  table.insert(columns, k) args_tracker[k] = true end end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then  local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(filtered, parsed_data) end end cursor = result[1] until (cursor == '0') return filtered";
+// const GET_SOME_SCRIPT: &str = r"local result = {} for _, key in ipairs(KEYS) do    table.insert(result, redis.call('HGETALL', key)) end return result";
+
 pub enum Record {
     Full { data: Model },
     Partial { data: HashMap<String, Py<PyAny>> },
@@ -307,8 +310,21 @@ impl Store {
     ) -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
             let fields = model_meta.fields.clone();
-            let keys = get_all_ids_for_model(store, model_name)?;
-            find_partial_many_by_raw_ids(store, fields, &keys, &columns)
+
+            redis_utils::run_script(
+                store,
+                &fields,
+                |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
+                    pipe.cmd("EVAL")
+                        .arg(GET_ALL_BUT_SOME_COLS_NESTED_SCRIPT)
+                        .arg(0)
+                        .arg(get_table_key_pattern(model_name))
+                        .arg(columns)
+                        .arg(&model_meta.nested_fields);
+
+                    Ok(vec![])
+                },
+            )
         })
     }
 }
@@ -478,4 +494,10 @@ fn get_all_ids_for_model(store: &mut Store, model_name: &str) -> PyResult<Vec<St
             Ok(keys)
         }
     }
+}
+
+/// Generates the key pattern to use when selecting keys in redis of a given model
+#[inline]
+fn get_table_key_pattern(model_name: &str) -> String {
+    format!("{}_%&_*", model_name)
 }

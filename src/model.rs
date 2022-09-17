@@ -264,17 +264,39 @@ pub struct ModelMeta {
     pub(crate) fields: HashMap<String, Py<PyAny>>,
     pub(crate) primary_key_field: String,
     pub(crate) model_type: Py<PyType>,
+    pub(crate) nested_fields: Vec<String>,
 }
 
 impl ModelMeta {
     pub fn new(model_type: &PyType) -> PyResult<Self> {
         if is_model(model_type)? {
+            let fields: HashMap<String, Py<PyAny>> =
+                model_type.call_method0("get_fields")?.extract()?;
+            let mut nested_fields: Vec<String> = Default::default();
+            for (k, v) in &fields {
+                Python::with_gil(|py| -> PyResult<()> {
+                    let v = v.into_py(py);
+                    let field_type = v.as_ref(py).downcast::<PyType>();
+                    match field_type {
+                        Ok(field_type) => {
+                            if is_model(field_type)? {
+                                nested_fields.push(k.to_string())
+                            }
+                        }
+                        Err(_) => {}
+                    }
+
+                    Ok(())
+                })?;
+            }
+
             Ok(ModelMeta {
-                fields: model_type.call_method0("get_fields")?.extract()?,
+                fields,
                 primary_key_field: model_type
                     .call_method0("get_primary_key_field")?
                     .extract()?,
                 model_type: Py::from(model_type),
+                nested_fields,
             })
         } else {
             Err(PyValueError::new_err(format!(
