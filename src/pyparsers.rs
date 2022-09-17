@@ -154,9 +154,10 @@ pub(crate) fn redis_to_py_value(
         )))
     } else {
         let model_name = field_type_name.to_lowercase();
-        if let Some(model_meta) = store.models.clone().get(&model_name) {
-            let fields = &model_meta.fields;
-            let v = parse_redis_single_raw_value(store, fields, value)?;
+
+        if let Some(model_meta) = store.models.get(&model_name) {
+            let model_meta = model_meta.clone();
+            let v = parse_redis_single_raw_value(store, &model_meta.fields, value)?;
             Python::with_gil(|py| {
                 let v = v.into_py_dict(py);
                 field_type.call(py, (), Some(v))
@@ -247,8 +248,9 @@ pub fn str_to_py_obj(
         )))
     } else {
         let model_name = name.to_lowercase();
-        if let Some(model_meta) = store.models.clone().get(&model_name) {
-            str_to_nested_model(store, model_meta, value)
+        if let Some(model_meta) = store.models.get(&model_name) {
+            let model_meta = model_meta.clone();
+            str_to_nested_model(store, &model_meta, value)
         } else {
             Err(PyTypeError::new_err(format!(
                 "type annotation {} is not supported",

@@ -309,11 +309,9 @@ impl Store {
         columns: Vec<&str>,
     ) -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let fields = model_meta.fields.clone();
-
             redis_utils::run_script(
                 store,
-                &fields,
+                &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
                     pipe.cmd("EVAL")
                         .arg(GET_ALL_BUT_SOME_COLS_NESTED_SCRIPT)
