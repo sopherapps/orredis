@@ -2,14 +2,15 @@ use std::collections::HashMap;
 
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyType;
+use pyo3::types::{IntoPyDict, PyType};
 use pyo3::{Py, PyAny, PyResult, Python};
 use redis::{Commands, ConnectionLike};
 
 use crate::model::ModelMeta;
-use crate::{redis_utils, Model};
+use crate::{pyparsers, redis_utils, Model};
 
-const GET_ALL_BUT_SOME_COLS_NESTED_SCRIPT: &str = r"local filtered = {} local cursor = '0' local table_unpack = table.unpack or unpack local columns = {} local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if i > 1 then if args_tracker[k] then nested_columns[k] = true else  table.insert(columns, k) args_tracker[k] = true end end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then  local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(filtered, parsed_data) end end cursor = result[1] until (cursor == '0') return filtered";
+const GET_ALL_BUT_SOME_COLS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local table_unpack = table.unpack or unpack local columns = {} local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if i > 1 then if args_tracker[k] then nested_columns[k] = true else  table.insert(columns, k) args_tracker[k] = true end end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then  local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(filtered, parsed_data) end end cursor = result[1] until (cursor == '0') return filtered";
+const GET_ALL_SCRIPT: &str = r"local filtered = {} local cursor = '0' local nested_fields = {} for i, key in ipairs(ARGV) do if i > 1 then nested_fields[key] = true end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(filtered, parent) end end cursor = result[1] until (cursor == '0') return filtered";
 // const GET_SOME_SCRIPT: &str = r"local result = {} for _, key in ipairs(KEYS) do    table.insert(result, redis.call('HGETALL', key)) end return result";
 
 pub enum Record {
@@ -257,10 +258,31 @@ impl Store {
 
     pub fn find_all(&mut self, model_name: &str) -> PyResult<Vec<Py<PyAny>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let fields = model_meta.fields.clone();
-            let model_type = &model_meta.model_type.clone();
-            let keys = get_all_ids_for_model(store, model_name)?;
-            find_many_by_raw_ids(store, fields, &keys, model_type)
+            let data = redis_utils::run_script(
+                store,
+                &model_meta.fields,
+                |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
+                    pipe.cmd("EVAL")
+                        .arg(GET_ALL_SCRIPT)
+                        .arg(0)
+                        .arg(get_table_key_pattern(model_name))
+                        .arg(&model_meta.nested_fields);
+
+                    Ok(vec![])
+                },
+            )?;
+            let model_type = model_meta.model_type.clone();
+            let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
+            for dict in data {
+                let instance = Python::with_gil(|py| {
+                    let dict = dict.into_py_dict(py);
+                    model_type.call(py, (), Some(dict))
+                })?;
+
+                records.push(instance);
+            }
+
+            Ok(records)
         })
     }
 
@@ -314,7 +336,7 @@ impl Store {
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
                     pipe.cmd("EVAL")
-                        .arg(GET_ALL_BUT_SOME_COLS_NESTED_SCRIPT)
+                        .arg(GET_ALL_BUT_SOME_COLS_SCRIPT)
                         .arg(0)
                         .arg(get_table_key_pattern(model_name))
                         .arg(columns)

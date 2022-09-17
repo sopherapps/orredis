@@ -161,10 +161,7 @@ pub(crate) fn redis_to_py_value(
         if let Some(model_meta) = store.models.get(&model_name) {
             let model_meta = model_meta.clone();
             let v = parse_redis_single_raw_value(store, &model_meta.fields, value)?;
-            Python::with_gil(|py| {
-                let v = v.into_py_dict(py);
-                field_type.call(py, (), Some(v))
-            })
+            hashmap_to_py_model_subclass(field_type, v)
         } else {
             Err(PyTypeError::new_err(format!(
                 "type annotation {} is not supported",
@@ -172,6 +169,18 @@ pub(crate) fn redis_to_py_value(
             )))
         }
     }
+}
+
+/// Converts a hashmap to a python Model instance
+#[inline]
+pub(crate) fn hashmap_to_py_model_subclass(
+    subclass_type: &Py<PyAny>,
+    value: HashMap<String, Py<PyAny>>,
+) -> PyResult<Py<PyAny>> {
+    Python::with_gil(|py| {
+        let v = value.into_py_dict(py);
+        subclass_type.call(py, (), Some(v))
+    })
 }
 
 pub fn str_to_py_obj(
