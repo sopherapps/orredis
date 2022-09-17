@@ -35,21 +35,24 @@ pub(crate) fn parse_redis_single_raw_value(
     fields: &HashMap<String, Py<PyAny>>,
     value: &redis::Value,
 ) -> PyResult<HashMap<String, Py<PyAny>>> {
-    println!("value: {:?}\n", value);
-    value
-        .as_map_iter()
-        .ok_or_else(|| {
-            py_value_error!(value, "Item in response from redis is of unexpected shape")
-        })?
-        .map(|(k, v)| {
-            let k = redis::from_redis_value::<String>(k)
-                .or_else(|e| Err(py_value_error!(&k, e.to_string())))?;
-            let field_type = fields
-                .get(&k)
-                .ok_or_else(|| py_key_error!(&k, "Unexpected field name"))?;
-            Ok((k, redis_to_py_value(store, v, field_type)?))
-        })
-        .collect()
+    let value_as_map = value.as_map_iter();
+    match value_as_map {
+        None => {
+            let v = redis_to_py::<String>(value)?;
+            let v = Python::with_gil(|py| v.into_py(py));
+            Ok(HashMap::from([("key".to_string(), v)]))
+        }
+        Some(value) => value
+            .map(|(k, v)| {
+                let k = redis::from_redis_value::<String>(k)
+                    .or_else(|e| Err(py_value_error!(&k, e.to_string())))?;
+                let field_type = fields
+                    .get(&k)
+                    .ok_or_else(|| py_key_error!(&k, "Unexpected field name"))?;
+                Ok((k, redis_to_py_value(store, v, field_type)?))
+            })
+            .collect(),
+    }
 }
 
 pub(crate) fn redis_to_py_value(
