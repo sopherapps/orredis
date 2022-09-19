@@ -202,12 +202,10 @@ impl Store {
 
     pub fn delete_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<()> {
         redis_utils::run_in_transaction(self, |_store, pipe| {
-            let model_index = redis_utils::get_model_index(model_name);
             let key = format!("{}", id);
             let primary_key = redis_utils::get_primary_key(model_name, &key);
 
             pipe.del(&primary_key);
-            pipe.srem(model_index, &primary_key);
 
             Ok(())
         })
@@ -215,7 +213,6 @@ impl Store {
 
     pub fn delete_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<()> {
         redis_utils::run_in_transaction(self, |_store, pipe| {
-            let model_index = redis_utils::get_model_index(model_name);
             let keys: Vec<String> = ids
                 .into_iter()
                 .map(|k| format!("{}", k))
@@ -223,7 +220,6 @@ impl Store {
                 .collect();
 
             pipe.del(&keys);
-            pipe.srem(model_index, &keys);
 
             Ok(())
         })

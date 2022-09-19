@@ -126,23 +126,14 @@ pub fn insert_on_pipeline(
 ) -> PyResult<String> {
     let name = get_primary_key(model_name, key);
     let data = serialize_to_key_value_pairs(store, pipe, raw_data, life_span)?;
-    let model_index = get_model_index(model_name);
 
     pipe.hset_multiple(&name, &data);
-    pipe.sadd(&model_index, &name);
 
     if let Some(life_span) = life_span {
         pipe.expire(&name, life_span);
-        pipe.expire(&model_index, life_span);
     }
 
     Ok(name)
-}
-
-/// Gets the index key of the virtual table.
-#[inline]
-pub(crate) fn get_model_index(model_name: &str) -> String {
-    format!("{}__index", model_name)
 }
 
 /// Gets the primary key for the given table-key combination
