@@ -4,15 +4,16 @@ use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyType};
 use pyo3::{Py, PyAny, PyResult, Python};
-use redis::{Commands, ConnectionLike};
+use redis::ConnectionLike;
 
 use crate::model::ModelMeta;
 use crate::redis_utils::get_primary_key;
-use crate::{pyparsers, redis_utils, Model};
+use crate::{redis_utils, Model};
 
-const GET_ALL_BUT_SOME_COLS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local table_unpack = table.unpack or unpack local columns = {} local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if i > 1 then if args_tracker[k] then nested_columns[k] = true else  table.insert(columns, k) args_tracker[k] = true end end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then  local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(filtered, parsed_data) end end cursor = result[1] until (cursor == '0') return filtered";
-const GET_ALL_SCRIPT: &str = r"local filtered = {} local cursor = '0' local nested_fields = {} for i, key in ipairs(ARGV) do if i > 1 then nested_fields[key] = true end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(filtered, parent) end end cursor = result[1] until (cursor == '0') return filtered";
-const GET_SOME_SCRIPT: &str = r"local result = {} local nested_fields = {} for _, key in ipairs(ARGV) do nested_fields[key] = true end for _, key in ipairs(KEYS) do local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(result, parent) end return result";
+const SELECT_SOME_FIELDS_FOR_ALL_IDS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local table_unpack = table.unpack or unpack local columns = {} local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if i > 1 then if args_tracker[k] then nested_columns[k] = true else  table.insert(columns, k) args_tracker[k] = true end end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then  local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(filtered, parsed_data) end end cursor = result[1] until (cursor == '0') return filtered";
+const SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local nested_fields = {} for i, key in ipairs(ARGV) do if i > 1 then nested_fields[key] = true end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(filtered, parent) end end cursor = result[1] until (cursor == '0') return filtered";
+const SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT: &str = r"local result = {} local nested_fields = {} for _, key in ipairs(ARGV) do nested_fields[key] = true end for _, key in ipairs(KEYS) do local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(result, parent) end return result";
+const SELECT_SOME_FIELDS_FOR_SOME_IDS_SCRIPT: &str = r"local result = {} local table_unpack = table.unpack or unpack local columns = { } local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if args_tracker[k] then nested_columns[k] = true else table.insert(columns, k) args_tracker[k] = true end end for _, key in ipairs(KEYS) do local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(result, parsed_data) end return result";
 
 pub enum Record {
     Full { data: Model },
@@ -254,7 +255,7 @@ impl Store {
                         .collect();
 
                     pipe.cmd("EVAL")
-                        .arg(GET_SOME_SCRIPT)
+                        .arg(SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT)
                         .arg(ids.len())
                         .arg(ids)
                         .arg(&model_meta.nested_fields);
@@ -262,34 +263,8 @@ impl Store {
                     Ok(vec![])
                 },
             )?;
-            let number_of_fields = model_meta.fields.len();
-            let model_type = model_meta.model_type.clone();
-            let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
-            for dict in data {
-                if number_of_fields > 0 && dict.len() == 0 {
-                    // skip empty items
-                    continue;
-                }
 
-                let instance = Python::with_gil(|py| {
-                    let dict = dict.into_py_dict(py);
-                    model_type.call(py, (), Some(dict))
-                })?;
-
-                records.push(instance);
-            }
-
-            Ok(records)
-            // let fields = model_meta.fields.clone();
-            // let model_type = &model_meta.model_type.clone();
-            // let keys = ids
-            //     .into_iter()
-            //     .map(|id| {
-            //         let key = format!("{}", id);
-            //         redis_utils::get_primary_key(model_name, &key)
-            //     })
-            //     .collect();
-            // find_many_by_raw_ids(store, fields, &keys, model_type)
+            convert_to_py_model_instances(model_meta, data)
         })
     }
 
@@ -300,7 +275,7 @@ impl Store {
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
                     pipe.cmd("EVAL")
-                        .arg(GET_ALL_SCRIPT)
+                        .arg(SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT)
                         .arg(0)
                         .arg(get_table_key_pattern(model_name))
                         .arg(&model_meta.nested_fields);
@@ -308,23 +283,7 @@ impl Store {
                     Ok(vec![])
                 },
             )?;
-            let model_type = model_meta.model_type.clone();
-            let number_of_fields = model_meta.fields.len();
-            let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
-            for dict in data {
-                if number_of_fields > 0 && dict.len() == 0 {
-                    // skip empty items
-                    continue;
-                }
-                let instance = Python::with_gil(|py| {
-                    let dict = dict.into_py_dict(py);
-                    model_type.call(py, (), Some(dict))
-                })?;
-
-                records.push(instance);
-            }
-
-            Ok(records)
+            convert_to_py_model_instances(model_meta, data)
         })
     }
 
@@ -355,15 +314,28 @@ impl Store {
         columns: Vec<&str>,
     ) -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let fields = model_meta.fields.clone();
-            let keys = ids
+            let keys: Vec<String> = ids
                 .into_iter()
                 .map(|id| {
                     let key = format!("{}", id);
                     redis_utils::get_primary_key(model_name, &key)
                 })
                 .collect();
-            find_partial_many_by_raw_ids(store, fields, &keys, &columns)
+
+            redis_utils::run_script(
+                store,
+                &model_meta.fields,
+                |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
+                    pipe.cmd("EVAL")
+                        .arg(SELECT_SOME_FIELDS_FOR_SOME_IDS_SCRIPT)
+                        .arg(keys.len())
+                        .arg(keys)
+                        .arg(columns)
+                        .arg(&model_meta.nested_fields);
+
+                    Ok(vec![])
+                },
+            )
         })
     }
 
@@ -378,7 +350,7 @@ impl Store {
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
                     pipe.cmd("EVAL")
-                        .arg(GET_ALL_BUT_SOME_COLS_SCRIPT)
+                        .arg(SELECT_SOME_FIELDS_FOR_ALL_IDS_SCRIPT)
                         .arg(0)
                         .arg(get_table_key_pattern(model_name))
                         .arg(columns)
@@ -466,100 +438,33 @@ pub(crate) fn find_one_partial_by_raw_id(
     }
 }
 
-fn find_many_by_raw_ids(
-    store: &mut Store,
-    fields: HashMap<String, Py<PyAny>>,
-    ids: &Vec<String>,
-    model_type: &Py<PyType>,
-) -> PyResult<Vec<Py<PyAny>>> {
-    let data = redis_utils::run_without_transaction(
-        store,
-        |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
-            for id in ids {
-                pipe.hgetall(id);
-            }
-
-            Ok(vec![])
-        },
-    )?;
-
-    let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
-    let number_of_fields = fields.len();
-    for item in data {
-        if number_of_fields > 0 && item.len() == 0 {
-            // skip empty items
-            continue;
-        }
-
-        let model = redis_utils::parse_model(&fields, store, &item)?;
-        let item = model.to_subclass_instance(model_type)?;
-        records.push(item);
-    }
-
-    Ok(records)
-}
-
-pub fn find_partial_many_by_raw_ids(
-    store: &mut Store,
-    fields: HashMap<String, Py<PyAny>>,
-    ids: &Vec<String>,
-    columns: &Vec<&str>,
-) -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
-    let raw = redis_utils::run_without_transaction(
-        store,
-        |_store, pipe| -> PyResult<Vec<Vec<String>>> {
-            for id in ids {
-                pipe.cmd("HMGET").arg(id).arg(columns);
-            }
-
-            Ok(vec![])
-        },
-    )?;
-
-    let data: Vec<HashMap<String, String>> = raw
-        .into_iter()
-        .map(|item| {
-            item.into_iter()
-                .zip(columns)
-                .map(|(v, k)| (k.to_string(), v))
-                .collect::<HashMap<String, String>>()
-        })
-        .collect();
-
-    let mut parsed_data: Vec<HashMap<String, Py<PyAny>>> = Vec::with_capacity(data.len());
-    let number_of_fields = fields.len();
-    for item in data {
-        if number_of_fields > 0 && item.len() == 0 {
-            // skip empty items
-            continue;
-        }
-
-        let model = redis_utils::parse_model(&fields, store, &item)?;
-        let dict = model.dict()?;
-        parsed_data.push(dict);
-    }
-
-    Ok(parsed_data)
-}
-
-fn get_all_ids_for_model(store: &mut Store, model_name: &str) -> PyResult<Vec<String>> {
-    let conn = store.conn.as_mut();
-
-    match conn {
-        None => Err(PyConnectionError::new_err("redis server disconnected")),
-        Some(conn) => {
-            let model_index = redis_utils::get_model_index(model_name);
-            let keys = conn
-                .sscan(&model_index)
-                .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?
-                .collect();
-            Ok(keys)
-        }
-    }
-}
-
 /// Generates the key pattern to use when selecting keys in redis of a given model
 #[inline]
 fn get_table_key_pattern(model_name: &str) -> String {
     format!("{}_%&_*", model_name)
+}
+
+/// Converts a list of parsed hashmaps to python objects of the given model_type in the model_meta
+fn convert_to_py_model_instances(
+    model_meta: &ModelMeta,
+    data: Vec<HashMap<String, Py<PyAny>>>,
+) -> Result<Vec<Py<PyAny>>, PyErr> {
+    let number_of_fields = model_meta.fields.len();
+    let model_type = model_meta.model_type.clone();
+    let mut records: Vec<Py<PyAny>> = Vec::with_capacity(data.len());
+    for dict in data {
+        if number_of_fields > 0 && dict.len() == 0 {
+            // skip empty items
+            continue;
+        }
+
+        let instance = Python::with_gil(|py| {
+            let dict = dict.into_py_dict(py);
+            model_type.call(py, (), Some(dict))
+        })?;
+
+        records.push(instance);
+    }
+
+    Ok(records)
 }

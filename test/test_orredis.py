@@ -125,6 +125,34 @@ def test_select_some_columns(store):
 
 
 @pytest.mark.parametrize("store", redis_store_fixture)
+def test_select_some_columns_for_some_items(store):
+    """
+    Selecting some columns, for some ids only, returns a list of dictionaries of book models of the selected ids
+    with only those columns
+    """
+    Book.insert(books)
+    ids = [book.title for book in books[:2]]
+    books_dict = {book.title: book for book in books[:2]}
+    columns = ['title', 'author', 'in_stock']
+    response = Book.select(columns=['title', 'author', 'in_stock'], ids=ids)
+    response_dict = {book['title']: book for book in response}
+
+    assert len(response) == len(ids)
+
+    for title, book in books_dict.items():
+        book_in_response = response_dict[title]
+        assert isinstance(book_in_response, dict)
+        assert sorted(book_in_response.keys()) == sorted(columns)
+
+        for column in columns:
+            if column == 'author':
+                assert book_in_response[column] == getattr(book, column)
+            else:
+                v = getattr(book, column)
+                assert f"{book_in_response[column]}" == f"{v}"
+
+
+@pytest.mark.parametrize("store", redis_store_fixture)
 def test_select_some_ids(store):
     """
     Selecting some ids returns only those elements with the given ids
