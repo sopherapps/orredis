@@ -290,14 +290,32 @@ impl Store {
         columns: Vec<&str>,
     ) -> PyResult<Py<PyAny>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let fields = model_meta.fields.clone();
-            let key = format!("{}", id);
-            let primary_key = redis_utils::get_primary_key(model_name, &key);
-            let dict = find_one_partial_by_raw_id(store, fields, &primary_key, &columns)?;
-            match dict {
+            let data = redis_utils::run_script(
+                store,
+                &model_meta.fields,
+                |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
+                    pipe.cmd("EVAL")
+                        .arg(SELECT_SOME_FIELDS_FOR_SOME_IDS_SCRIPT)
+                        .arg(1)
+                        .arg(get_primary_key(model_name, &format!("{}", id)))
+                        .arg(&columns)
+                        .arg(&model_meta.nested_fields);
+
+                    Ok(vec![])
+                },
+            )?;
+
+            let value = data.get(0);
+            match value {
                 None => Python::with_gil(|py| Ok(py.None())),
-                Some(dict) => {
-                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(dict.into_py(py)) })
+                Some(value) => {
+                    if data.len() == 0 && columns.len() > 0 {
+                        Python::with_gil(|py| Ok(py.None()))
+                    } else {
+                        Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+                            Ok(value.clone().into_py(py))
+                        })
+                    }
                 }
             }
         })
@@ -395,40 +413,6 @@ pub(crate) fn find_one_by_raw_id(
             } else {
                 let model = redis_utils::parse_model(&fields, store, item)?;
                 Ok(Some(model))
-            }
-        }
-    }
-}
-
-pub(crate) fn find_one_partial_by_raw_id(
-    store: &mut Store,
-    fields: HashMap<String, Py<PyAny>>,
-    id: &str,
-    columns: &Vec<&str>,
-) -> PyResult<Option<HashMap<String, Py<PyAny>>>> {
-    let data = redis_utils::run_without_transaction(
-        store,
-        |_store, pipe| -> PyResult<Vec<Vec<String>>> {
-            let key = format!("{}", id);
-            pipe.cmd("HMGET").arg(key).arg(&columns);
-            Ok(vec![])
-        },
-    )?;
-
-    match data.get(0) {
-        None => Ok(None),
-        Some(item) => {
-            if item.len() == 0 && columns.len() > 0 {
-                Ok(None)
-            } else {
-                let record = item
-                    .into_iter()
-                    .zip(columns)
-                    .map(|(v, k)| (k.to_string(), v.to_string()))
-                    .collect::<HashMap<String, String>>();
-                let model = redis_utils::parse_model(&fields, store, &record)?;
-                let dict = model.dict()?;
-                Ok(Some(dict))
             }
         }
     }

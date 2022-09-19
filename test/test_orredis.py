@@ -164,6 +164,40 @@ def test_select_some_ids(store):
 
 
 @pytest.mark.parametrize("store", redis_store_fixture)
+def test_select_non_existent_id(store):
+    """
+    Selecting non-existent id returns None
+    """
+    Book.insert(books)
+    response = Book.select(ids="Some strange book")
+    assert response is None
+
+
+@pytest.mark.parametrize("store", redis_store_fixture)
+def test_select_one_id(store):
+    """
+    Selecting one id returns only the elements with the given id
+    """
+    Book.insert(books)
+    for book in books:
+        response = Book.select(ids=book.title)
+        assert response == book
+
+
+@pytest.mark.parametrize("store", redis_store_fixture)
+def test_select_some_columns_for_one_id(store):
+    """
+    Selecting one id returns only the columns for the elements with the given id
+    """
+    Book.insert(books)
+    columns = ['title', 'author', 'in_stock']
+
+    for book in books:
+        response = Book.select(ids=book.title, columns=columns)
+        assert response == {key: getattr(book, key) for key in columns}
+
+
+@pytest.mark.parametrize("store", redis_store_fixture)
 def test_update(store):
     """
     Updating an item of a given primary key updates it in redis
