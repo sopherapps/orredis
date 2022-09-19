@@ -173,6 +173,19 @@ def test_select_non_existent_id(store):
     assert response is None
 
 
+# FIXME: add test for non-existent columns for both single and multiple record retrieval
+
+@pytest.mark.parametrize("store", redis_store_fixture)
+def test_select_non_existent_id_with_existent_columns(store):
+    """
+    Selecting non-existent id even when columns are okay returns None
+    """
+    Book.insert(books)
+    # Fixme: this seems to be returning some error instead of None
+    response = Book.select(ids="Some strange book", columns=["author", "title"])
+    assert response is None
+
+
 @pytest.mark.parametrize("store", redis_store_fixture)
 def test_select_one_id(store):
     """

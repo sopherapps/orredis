@@ -238,15 +238,6 @@ impl Model {
         let name = name.to_lowercase();
         Ok(name)
     }
-
-    /// This converts the model to the native class by consuming the given pointer
-    pub(crate) fn to_subclass_instance(self, model_type: &Py<PyType>) -> PyResult<Py<PyAny>> {
-        Python::with_gil(|py| -> PyResult<Py<PyAny>> {
-            let dict = self.dict()?;
-            let dict = dict.into_py_dict(py);
-            model_type.call(py, (), Some(dict))
-        })
-    }
 }
 
 impl IntoIterator for Model {

@@ -227,14 +227,27 @@ impl Store {
 
     pub fn find_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<Py<PyAny>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let fields = model_meta.fields.clone();
-            let model_type = model_meta.model_type.clone();
-            let key = format!("{}", id);
-            let primary_key = redis_utils::get_primary_key(model_name, &key);
-            let model = find_one_by_raw_id(store, fields, &primary_key)?;
-            match model {
+            let data = redis_utils::run_script(
+                store,
+                &model_meta.fields,
+                |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
+                    pipe.cmd("EVAL")
+                        .arg(SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT)
+                        .arg(1)
+                        .arg(get_primary_key(model_name, &id.to_string()))
+                        .arg(&model_meta.nested_fields);
+
+                    Ok(vec![])
+                },
+            )?;
+
+            let data = convert_to_py_model_instances(model_meta, data)?;
+            let record = data.get(0);
+            match record {
                 None => Python::with_gil(|py| Ok(py.None())),
-                Some(model) => model.to_subclass_instance(&model_type),
+                Some(value) => {
+                    Python::with_gil(|py| -> PyResult<Py<PyAny>> { Ok(value.into_py(py)) })
+                }
             }
         })
     }
@@ -389,32 +402,6 @@ where
             model_name
         ))),
         Some(model_meta) => closure(store, model_meta),
-    }
-}
-
-pub(crate) fn find_one_by_raw_id(
-    store: &mut Store,
-    fields: HashMap<String, Py<PyAny>>,
-    id: &str,
-) -> PyResult<Option<Model>> {
-    let data = redis_utils::run_without_transaction(
-        store,
-        |_store, pipe| -> PyResult<Vec<HashMap<String, String>>> {
-            pipe.hgetall(id.to_string());
-            Ok(vec![])
-        },
-    )?;
-
-    match data.get(0) {
-        None => Ok(None),
-        Some(item) => {
-            if item.len() == 0 && fields.len() > 0 {
-                Ok(None)
-            } else {
-                let model = redis_utils::parse_model(&fields, store, item)?;
-                Ok(Some(model))
-            }
-        }
     }
 }
 

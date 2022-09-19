@@ -8,8 +8,6 @@ use pyo3::types::{IntoPyDict, PyDate, PyType};
 use pyo3::{IntoPy, Py, PyAny, PyResult, Python};
 use redis::FromRedisValue;
 
-use crate::model::ModelMeta;
-use crate::store::find_one_by_raw_id;
 use crate::{parsers, Store};
 
 macro_rules! py_key_error {
@@ -183,111 +181,6 @@ pub(crate) fn hashmap_to_py_model_subclass(
     })
 }
 
-pub fn str_to_py_obj(
-    store: &mut Store,
-    value: &str,
-    field_type: &Py<PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let name = get_name_of_py_type(field_type)?;
-    let name = name.as_str();
-
-    if name == "int" {
-        str_to_py_int(value)
-    } else if name == "float" {
-        str_to_py_float(value)
-    } else if name == "str" {
-        str_to_py_str(value)
-    } else if name == "bool" {
-        str_to_py_bool(value)
-    } else if name == "date" {
-        str_to_py_date(value)
-    } else if name == "datetime" {
-        str_to_py_datetime(value)
-    } else if name.starts_with("typing.Tuple[int") {
-        str_to_py_tuple::<i64>(value)
-    } else if name.starts_with("typing.Tuple[float") {
-        str_to_py_tuple::<f64>(value)
-    } else if name.starts_with("typing.Tuple[str") {
-        str_to_py_tuple::<String>(value)
-    } else if name.starts_with("typing.Tuple[bool") {
-        str_to_py_tuple::<bool>(value)
-    } else if name.starts_with("typing.Tuple[") {
-        Err(PyTypeError::new_err(format!(
-            "tuples of type {} are not supported yet",
-            name
-        )))
-    } else if name.starts_with("typing.List[int") {
-        str_to_py_list::<i64>(value)
-    } else if name.starts_with("typing.List[float") {
-        str_to_py_list::<f64>(value)
-    } else if name.starts_with("typing.List[str") {
-        str_to_py_list::<String>(value)
-    } else if name.starts_with("typing.List[bool") {
-        str_to_py_list::<bool>(value)
-    } else if name.starts_with("typing.List[") {
-        Err(PyTypeError::new_err(format!(
-            "lists of type {} are not supported yet",
-            name
-        )))
-    } else if name == "typing.Dict[int, int]" {
-        str_to_py_dict::<i64, i64>(value)
-    } else if name == "typing.Dict[int, float]" {
-        str_to_py_dict::<i64, f64>(value)
-    } else if name == "typing.Dict[int, str]" {
-        str_to_py_dict::<i64, String>(value)
-    } else if name == "typing.Dict[int, bool]" {
-        str_to_py_dict::<i64, bool>(value)
-    } else if name == "typing.Dict[str, int]" {
-        str_to_py_dict::<String, i64>(value)
-    } else if name == "typing.Dict[str, float]" {
-        str_to_py_dict::<String, f64>(value)
-    } else if name == "typing.Dict[str, str]" {
-        str_to_py_dict::<String, String>(value)
-    } else if name == "typing.Dict[str, bool]" {
-        str_to_py_dict::<String, bool>(value)
-    } else if name == "typing.Dict[bool, str]" {
-        str_to_py_dict::<bool, String>(value)
-    } else if name == "typing.Dict[bool, int]" {
-        str_to_py_dict::<bool, i64>(value)
-    } else if name == "typing.Dict[bool, float]" {
-        str_to_py_dict::<bool, f64>(value)
-    } else if name == "typing.Dict[bool, bool]" {
-        str_to_py_dict::<bool, bool>(value)
-    } else if name.starts_with("typing.Dict[") {
-        Err(PyTypeError::new_err(format!(
-            "dictionaries of type {} are not supported yet",
-            name
-        )))
-    } else {
-        let model_name = name.to_lowercase();
-        if let Some(model_meta) = store.models.get(&model_name) {
-            let model_meta = model_meta.clone();
-            str_to_nested_model(store, &model_meta, value)
-        } else {
-            Err(PyTypeError::new_err(format!(
-                "type annotation {} is not supported",
-                name
-            )))
-        }
-    }
-}
-
-fn str_to_nested_model(
-    store: &mut Store,
-    model_meta: &ModelMeta,
-    value: &str,
-) -> PyResult<Py<PyAny>> {
-    let model_type = Python::with_gil(|py| model_meta.model_type.clone_ref(py));
-    let nested_model = find_one_by_raw_id(store, model_meta.fields.clone(), value)?;
-    match nested_model {
-        None => {
-            let none = Python::with_gil(|py| py.None());
-            Ok(none)
-        }
-        Some(nested_model) => nested_model.to_subclass_instance(&model_type),
-    }
-}
-
 fn str_to_py_dict<T, U>(value: &str) -> PyResult<Py<PyAny>>
 where
     T: FromStr + Hash + std::cmp::Eq + IntoPy<Py<PyAny>>,
@@ -343,24 +236,6 @@ fn timestamp_to_py_date(timestamp: i64) -> PyResult<Py<PyAny>> {
 
 fn str_to_py_bool(value: &str) -> PyResult<Py<PyAny>> {
     let v = value.to_lowercase().parse::<bool>()?;
-    let v = Python::with_gil(|py| v.into_py(py));
-    Ok(v)
-}
-
-fn str_to_py_str(value: &str) -> PyResult<Py<PyAny>> {
-    let v = value.parse::<String>()?;
-    let v = Python::with_gil(|py| v.into_py(py));
-    Ok(v)
-}
-
-fn str_to_py_float(value: &str) -> PyResult<Py<PyAny>> {
-    let v = value.parse::<f64>()?;
-    let v = Python::with_gil(|py| v.into_py(py));
-    Ok(v)
-}
-
-fn str_to_py_int(value: &str) -> PyResult<Py<PyAny>> {
-    let v = value.parse::<i64>()?;
     let v = Python::with_gil(|py| v.into_py(py));
     Ok(v)
 }

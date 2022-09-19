@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::str;
 
 use pyo3::exceptions::{PyConnectionError, PyValueError};
@@ -32,28 +31,6 @@ where
     f(store, &mut pipe)?;
     // attempt to close a transaction manually
     pipe.cmd("EXEC");
-
-    let conn = store.conn.as_mut();
-    match conn {
-        None => Err(PyConnectionError::new_err("redis server disconnected")),
-        Some(conn) => {
-            let result = pipe
-                .query::<T>(conn)
-                .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
-
-            Ok(result)
-        }
-    }
-}
-
-/// Runs in pipeline but without transaction
-pub(crate) fn run_without_transaction<T, F>(store: &mut Store, f: F) -> PyResult<T>
-where
-    F: FnOnce(&Store, &mut redis::Pipeline) -> PyResult<T>,
-    T: redis::FromRedisValue + Debug,
-{
-    let mut pipe = redis::pipe();
-    f(store, &mut pipe)?;
 
     let conn = store.conn.as_mut();
     match conn {
@@ -185,25 +162,4 @@ fn serialize_to_key_value_pairs(
         }
     }
     Ok(data)
-}
-
-/// Converts a hashmap into a Model instance
-pub(crate) fn parse_model(
-    fields: &HashMap<String, Py<PyAny>>,
-    store: &mut Store,
-    data: &HashMap<String, String>,
-) -> PyResult<Model> {
-    let mut _data: HashMap<String, Py<PyAny>> = HashMap::with_capacity(data.len());
-    for (k, v) in data {
-        let field_type = fields.get(k);
-        match field_type {
-            None => {}
-            Some(field_type) => {
-                let value = pyparsers::str_to_py_obj(store, &v, field_type)?;
-                _data.insert(k.clone(), value);
-            }
-        }
-    }
-
-    Ok(Model { _data })
 }
