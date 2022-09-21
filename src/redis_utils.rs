@@ -65,8 +65,7 @@ where
                 .query(conn)
                 .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
 
-            let mut list_of_results: Vec<HashMap<String, Py<PyAny>>> = Default::default();
-
+            // Adds about 800us
             let results = result
                 .as_sequence()
                 .ok_or_else(|| {
@@ -81,12 +80,12 @@ where
                     py_value_error!(result, "Response from redis is of unexpected shape")
                 })?;
 
-            for item in results {
-                let record = pyparsers::parse_redis_single_raw_value(store, fields, item)?;
-                list_of_results.push(record);
-            }
+            let list_of_results: PyResult<Vec<HashMap<String, Py<PyAny>>>> = results
+                .into_iter()
+                .map(|item| pyparsers::parse_redis_single_raw_value(store, fields, item))
+                .collect();
 
-            Ok(list_of_results)
+            Ok(list_of_results?)
         }
     }
 }

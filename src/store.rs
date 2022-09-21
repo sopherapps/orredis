@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use pyo3::callback::IntoPyCallbackOutput;
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyType};
@@ -128,9 +129,11 @@ impl Store {
     ) -> PyResult<()> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
             redis_utils::run_in_transaction(store, |store_in_tx, pipe| {
-                let data = Python::with_gil(|py| -> PyResult<Model> { data.extract::<Model>(py) })?;
+                let mut data =
+                    Python::with_gil(|py| -> PyResult<Model> { data.extract::<Model>(py) })?;
                 let key = data.get(&model_meta.primary_key_field)?;
                 let key = format!("{}", key);
+                data.set_default_values(&model_meta.default_values)?;
                 let record = Record::Full { data };
                 redis_utils::insert_on_pipeline(
                     store_in_tx,
@@ -155,9 +158,10 @@ impl Store {
             redis_utils::run_in_transaction(store, |store_in_tx, pipe| {
                 Python::with_gil(|py| {
                     for item in data {
-                        let item: Model = item.extract(py)?;
+                        let mut item: Model = item.extract(py)?;
                         let key = item.get(&model_meta.primary_key_field)?;
                         let key = format!("{}", key);
+                        item.set_default_values(&model_meta.default_values)?;
                         let record = Record::Full { data: item };
                         redis_utils::insert_on_pipeline(
                             store_in_tx,
@@ -394,14 +398,13 @@ pub fn execute_if_model_exists<T, F>(store: &mut Store, model_name: &str, closur
 where
     F: FnOnce(&mut Store, &ModelMeta) -> PyResult<T>,
 {
-    let models = store.models.clone();
-    let model_meta = models.get(model_name).clone();
+    let model_meta = store.models.get(model_name);
     match model_meta {
         None => Err(PyValueError::new_err(format!(
             "{} is not a model in this store",
             model_name
         ))),
-        Some(model_meta) => closure(store, model_meta),
+        Some(model_meta) => closure(store, &model_meta.clone()),
     }
 }
 
