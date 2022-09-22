@@ -11,6 +11,7 @@ class BaseModel(Model):
     """
     An abstract class to help with typings for Model class
     """
+    __defaults: Dict[str, Any] = {}
     _store: Store
     _primary_key_field: str
     _life_span: Optional[int] = None

@@ -1,278 +1,261 @@
 # orredis
 
-Just a a simple fast ORM for python built in rust
+A fast ORM for redis supporting both asynchronous and synchronous interaction with pooled or single connections to
+redis.
 
-## How to demo
+## Purpose
 
-```shell
-python3 -m venv env 
-source env/bin/activate
-pip install -r requirements.txt
-maturin develop
-python
-import orredis
-# do stuff with orredis
+An object-relational-mapping makes writing business logic intuitive because the data representation is closer to what
+the real-life situation is. It helps decouple the way such data is programmed from the way such data is actually
+persisted
+in any of the data persistence technologies we have, typically a database.
+
+Take the example of a book.
+In code, one will represent a book as an object with a number of properties such as "title", "edition", "author" etc.
+
+```python
+class Book(Model):
+  title: str
+  edition: int
+  author: Author
 ```
 
-## How to Test
+However, in the underlying data store, the same book could be saved as say, a row in a table for a relational database
+like PostgreSQL,
+or as a document in a document-based NoSQL databases like MongoDB or as a hashmap in redis.
+Of these, the document-based NoSQL databases are the closest to the definition in code.
+
+For MongoDB, the same book might be represented as the object below:
+
+```json
+{
+  "id": "some-random-string",
+  "title": "the title of the book",
+  "edition": 2,
+  "author": {
+    "name": "Charles Payne",
+    "yearsActive": [
+      1992,
+      2008
+    ]
+  }
+}
+```
+
+As you can see, it is still quite different.
+
+However, for redis, the representation is even going to be further off.
+It will most likely be saved as hashmap, with a given key. The properties of book will be 'fields' for that hashmap.
+
+In order to interact with the book representation in the redis server, one has to write commands like:
 
 ```shell
-python3 -m venv env 
-source env/bin/activate
-pip install -r requirements.txt
-maturin develop
-pytest
+# to save the book in the data store
+HSET "some key" "title" "the title of the book" "edition" 2 "author" "{\"name\":\"Charles Payne\",\"yearsActive\":[1992,2008]}"
+# to retrieve the entire book
+HGETALL "some key"
+# to retrieve just a few details of the book
+HMGET "some key" "title" "edition"
+# to update the book - see the confusion? are you saving a new book or updating one?
+HSET "some key" "edition" 2
+# to delete the book
+DEL "some key"
+```
+
+The above is so unrelated to the business logic that most of us will take a number of minutes or hours trying to
+understand what kind of data is even being saved. Is it a book or some random stuff?
+
+Now consider something like this:
+
+```python
+book = Book(title="some title", edition=2, author=Author(name="Charles Payne", years_active=(1992, 2008)))
+store = Store(url="redis://localhost:6379/0", pool_size=5, default_ttl=3000, timeout=1)
+store.create_collection(model=Book, primary_key_field="title")
+book_collection = store.get_collection(Book)
+# Do I even need to add a comment here?
+# to save books
+book_collection.add_one(book)
+book_collection.add_many([book, book.with_changes(edition=2), book.with_changes(title="another title")])
+# to retrieve books
+book_collection.get_one(id="some title")
+book_collection.get_all()
+book_collection.get_many(ids=["some title", "another title"])
+# to get a few details of books (returns a dictionary)
+book_collection.get_one_partially("some title", fields=["title", "edition"])
+book_collection.get_all_partiallly(fields=["title", "edition"])
+book_collection.get_many_partially(ids=["some title", "another title"], __fields=["title", "edition"])
+
+# or to update
+book_collection.update_one("some title", data={"edition": 1})
+# or to delete
+book_collection.delete_many(ids=["some title", "another title"])
+
+# clear all data in store
+store.clear()
+```
+
+Beautiful, isn't it?
+
+Now imagine using all that, and getting the extra perk of your code running really really fast because it was
+implemented
+in rust, just for the fun of it.
+
+Uh? You like?
+
+That is the purpose of this project.
+
+## Dependencies
+
+- python +v3.7
+- redis server (yes, you need have a redis server somewhere)
+
+## Quick Start
+
+- Install the package
+
+  ```bash
+  pip install pydantic-redis
+  ```
+
+- Import the `Store` and the `Model` classes and use accordingly
+
+```python
+from datetime import date
+from typing import Tuple, List
+from orredis import Model, Store
+
+
+# type annotations are the schema. 
+# Don't leave them out or you will just be getting strings for every property when you retrieve an object
+class Author(Model):
+  name: str
+  active_years: Tuple[int, int]
+
+
+class Book(Model):
+  title: str
+  author: Author
+  rating: float
+  published_on: date
+  tags: List[str] = []
+  in_stock: bool = True
+
+
+class Library(Model):
+  name: str
+  address: str
+
+
+# Create the store and add create a collection for each model
+# - `default_ttl` is the default time to live for each record is the store. 
+#   records never expire if there is no default_ttl set, and no `ttl` is given when adding that record to the store
+# - `timeout` is the number of milliseconds beyond which the connection to redis will raise a timeout error if
+#   it fails to establish a connection.
+store = Store(url="redis://localhost:6379/0", pool_size=5, default_ttl=3000, timeout=1000)
+# - `identifier_fields` are the properties on the model that uniquely identify a single record. They form an id.
+store.create_collection(model=Book, primary_key_field="title")
+store.create_collection(model=Library, primary_key_field="name")
+store.create_collection(model=Author, primary_key_field="name")
+
+# sample authors. You can create as many as you wish anywhere in the code
+
+authors = {
+  "charles": Author(name="Charles Dickens", active_years=(1220, 1280)),
+  "jane": Author(name="Jane Austen", active_years=(1580, 1640)),
+}
+
+# Sample books.
+books = [
+  Book(title="Oliver Twist", author=authors["charles"], published_on=date(year=1215, month=4, day=4),
+       in_stock=False, rating=2, tags=["Classic"]),
+  Book(title="Great Expectations", author=authors["charles"], published_on=date(year=1220, month=4, day=4),
+       rating=5,
+       tags=["Classic"]),
+  Book(title="Jane Eyre", author=authors["charles"], published_on=date(year=1225, month=6, day=4), in_stock=False,
+       rating=3.4, tags=["Classic", "Romance"]),
+  Book(title="Wuthering Heights", author=authors["jane"], published_on=date(year=1600, month=4, day=4),
+       rating=4.0,
+       tags=["Classic", "Romance"]),
+]
+
+# Some library objects
+libraries = [
+  Library(name="The Grand Library", address="Kinogozi, Hoima, Uganda"),
+  Library(name="Christian Library", address="Buhimba, Hoima, Uganda")
+]
+
+# Get the collections
+book_collection = store.get_collection(
+  model=Book)  # you can have as many instances of this collection as you wish to have
+library_collection = store.get_collection(model=Library)
+author_collection = store.get_collection(model=Author)
+
+# insert the data
+book_collection.add_many(books)  # (the associated authors will be automatically inserted)
+library_collection.add_many(libraries,
+                            ttl=3000)  # you can even specify the ttl for only these libraries when adding them
+
+# Get all books
+all_books = book_collection.get_all()
+print(
+  all_books)  # Will print [Book(title="Oliver Twist", author="Charles Dickens", published_on=date(year=1215, month=4, day=4), in_stock=False), Book(...]
+
+# Or get some books
+some_books = book_collection.get_many(ids=["Oliver Twist", "Jane Eyre"])
+print(some_books)  # Will print only those two books
+
+# Or select some authors
+some_authors = author_collection.get_many(ids=["Jane Austen"])
+print(some_authors)  # Will print Jane Austen even though you didn't explicitly insert her in the Author's collection
+
+# Or only get a few some properties of the book. THIS RETURNS DICTIONARIES not MODEL Instances
+books_with_few_fields = book_collection.get_all_partially(fields=["author", "in_stock"])
+print(books_with_few_fields)  # Will print [{"author": "'Charles Dickens", "in_stock": "True"},...]
+# there is also get_one_partially, get_many_partially
+
+# Update any book or library
+book_collection.update_one("Oliver Twist", data={"author": authors["jane"]})
+# You could even update a given author's details by nesting their new data in a book update
+updated_jane = authors["jane"].with_changes(
+  {"active_years": (1999, 2008)})  # create a new record from an old one, with only a few changes
+book_collection.update_one("Oliver Twist", data={"author": updated_jane})
+# Trying to retrieve jane directly will return her with the new details
+# All other books that have Jane Austen as author will also have their data updated. (like a real relationship)
+author_collection.get_one("Jane Austen")
+
+# Delete any number of items
+library_collection.delete_many(ids=["The Grand Library"])
 ```
 
 ## Benchmarks
 
-16th September 2022
+This package has been benchmarked against some of the pre-existing ORMs for redis and this is how it stacks up against
+them:
 
-### Bulk Inserts
+### Speed
 
-#### pydantic-redis
+TBD
 
-```
-------------------------------------------------------- benchmark: 1 tests -------------------------------------------------------
-Name (time in ms)                              Min     Max    Mean  StdDev  Median     IQR  Outliers       OPS  Rounds  Iterations
-----------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_bulk_insert[redis_store]     1.0353  1.4726  1.0766  0.0746  1.0478  0.0307       4;7  928.8924      59           1
-----------------------------------------------------------------------------------------------------------------------------------
-```
+### Memory
 
-#### orredis
+TBD
 
-```
---------------------------------------------------------------- benchmark: 1 tests ---------------------------------------------------------------
-Name (time in us)                                Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_bulk_insert[redis_store]     536.1690  1,159.2930  598.7722  38.0673  582.3160  34.8023     84;40        1.6701    1011           1
---------------------------------------------------------------------------------------------------------------------------------------------------
-```
+## Contributions
 
-### Single Insert
+Contributions are welcome. The docs have to maintained, the code has to be made cleaner, more idiomatic and faster,
+and there might be need for someone else to take over this repo in case I move on to other things. It happens!
 
-#### pydantic-redis
+First thing is you probably need to know a bit of rust. Consider reading
+the [rust book](https://doc.rust-lang.org/book/).
+It can be a very interesting read, albeit a long one.
 
-```
------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------
-Name (time in us)                                        Min       Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_single_insert[redis_store-book0]     394.7420  674.7820  443.2762  54.0996  429.4530  39.5740       7;7        2.2559      61           1
---------------------------------------------------------------------------------------------------------------------------------------------------------
-```
+When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTIONS_GUIDELINE.md)
 
-#### orredis
+Then you can read through the [SYSTEM DESIGN](./docs/SYSTEM_DESIGN.md) document to get a feel of what exactly is going
+on under the hood.
 
-``` 
------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------
-Name (time in us)                                        Min       Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_single_insert[redis_store-book0]     220.2550  419.6770  252.7016  30.6270  242.4070  33.5625   227;124        3.9572    1680           1
---------------------------------------------------------------------------------------------------------------------------------------------------------
-```
+### How to Test
 
-### Select All Items, All Columns
-
-#### pydantic-redis
-
-```
---------------------------------------------------------- benchmark: 1 tests --------------------------------------------------------
-Name (time in ms)                                 Min     Max    Mean  StdDev  Median     IQR  Outliers       OPS  Rounds  Iterations
--------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_default[redis_store]     1.1369  2.1050  1.2322  0.0939  1.2001  0.0653     65;57  811.5888     536           1
--------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-```
---------------------------------------------------------- benchmark: 1 tests --------------------------------------------------------
-Name (time in ms)                                 Min     Max    Mean  StdDev  Median     IQR  Outliers       OPS  Rounds  Iterations
--------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_default[redis_store]     1.6456  2.3329  1.7248  0.0539  1.7173  0.0358     58;21  579.7688     446           1
--------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Select All Items, Some Columns
-
-#### pydantic-redis
-
-```
------------------------------------------------------------------ benchmark: 1 tests ----------------------------------------------------------------
-Name (time in us)                                   Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_columns[redis_store]     829.1210  1,435.5640  936.6411  73.9743  910.0580  72.9880    142;34        1.0676     632           1
------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-```
---------------------------------------------------------- benchmark: 1 tests --------------------------------------------------------
-Name (time in ms)                                 Min     Max    Mean  StdDev  Median     IQR  Outliers       OPS  Rounds  Iterations
--------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_columns[redis_store]     1.0876  2.5144  1.1648  0.0797  1.1593  0.0611     26;16  858.5479     587           1
--------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Select Some Items, All Columns
-
-#### pydantic-redis
-
-``` 
------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------
-Name (time in us)                                      Min         Max        Mean    StdDev    Median       IQR  Outliers       OPS  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_some_items[redis_store]     638.8910  9,931.9470  1,010.0479  990.6769  805.8675  170.2030    26;101  990.0520     786           1
---------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-``` 
------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------
-Name (time in us)                                      Min         Max        Mean   StdDev      Median      IQR  Outliers       OPS  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_some_items[redis_store]     924.1230  1,333.6490  1,008.9675  47.1940  1,015.9670  55.4623    135;14  991.1122     615           1
---------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Select Some Items, Some Columns
-
-#### pydantic-redis
-
-``` 
------------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------------
-Name (time in us)                                                  Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_columns_for_some_items[redis_store]     521.9080  1,051.5770  590.0739  52.2138  581.7810  30.0695   211;112        1.6947     876           1
---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-``` 
------------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------------
-Name (time in us)                                                  Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_columns_for_some_items[redis_store]     629.2300  1,094.6230  673.8183  37.8365  659.0850  27.1202    108;77        1.4841     871           1
---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Select Some Columns for One item
-
-#### pydantic-redis
-
-```
-------------------------------------------------------------------------- benchmark: 1 tests -------------------------------------------------------------------------
-Name (time in us)                                                    Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_columns_for_one_id[redis_store-book0]     432.0490  1,283.3870  478.5827  48.9717  462.1490  33.1770     62;51        2.0895    1018           1
-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-```
------------------------------------------------------------------------- benchmark: 1 tests ------------------------------------------------------------------------
-Name (time in us)                                                    Min       Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_columns_for_one_id[redis_store-book0]     436.6400  863.9170  503.1452  42.9072  495.2645  59.3900    258;12        1.9875     970           1
---------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Select All Columns for One Item
-
-#### pydantic-redis
-
-``` 
------------------------------------------------------------------------ benchmark: 1 tests -----------------------------------------------------------------------
-Name (time in us)                                                Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_all_for_one_id[redis_store-book0]     486.2540  1,159.9010  542.3541  48.7065  535.3745  31.9265     73;65        1.8438     884           1
-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-``` 
------------------------------------------------------------------------ benchmark: 1 tests -----------------------------------------------------------------------
-Name (time in us)                                                Min         Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_select_all_for_one_id[redis_store-book0]     668.3060  1,081.5210  760.3733  45.6876  773.8600  54.4430    199;10        1.3151     747           1
-------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Update
-
-#### pydantic-redis
-
-``` 
-
------------------------------------------------------------------------- benchmark: 1 tests -----------------------------------------------------------------------
-Name (time in us)                                                   Min       Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
--------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_update[redis_store-Wuthering Heights-data0]     322.4000  962.5480  408.8422  88.3521  380.9710  97.1238     84;27        2.4459     643           1
--------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-#### orredis
-
-``` 
------------------------------------------------------------------------- benchmark: 1 tests -----------------------------------------------------------------------
-Name (time in us)                                                   Min       Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
--------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_update[redis_store-Wuthering Heights-data0]     186.7170  393.6100  216.4799  25.0688  203.7240  19.4390   215;185        4.6194    1798           1
--------------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Delete One
-
-#### pydantic-redis
-
-```
------------------------------------------------------------------------ benchmark: 1 tests ----------------------------------------------------------------------
-Name (time in us)                                             Min          Max      Mean    StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
------------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_delete[redis_store-Wuthering Heights]     151.3360  12,350.7080  452.2397  799.0145  259.6150  82.5930     42;88        2.2112     664           1
------------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-```
-
-#### orredis
-
-```
---------------------------------------------------------------------- benchmark: 1 tests --------------------------------------------------------------------
-Name (time in us)                                             Min       Max      Mean   StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
--------------------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_delete[redis_store-Wuthering Heights]     111.6590  281.1120  131.1303  16.6240  124.2750  14.7600   324;117        7.6260    2242           1
--------------------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-### Delete Bulk
-
-#### pydantic-redis
-
-```
----------------------------------------------------------------- benchmark: 1 tests ---------------------------------------------------------------
-Name (time in us)                                Min         Max      Mean    StdDev    Median      IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
----------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_bulk_delete[redis_store]     183.0900  6,198.5030  557.8025  976.7148  240.6170  85.4450     15;20        1.7927     147           1
---------------------------------------------------------------------------------------------------------------------------------------------------- 
-```
-
-#### orredis
-
-``` 
--------------------------------------------------------------- benchmark: 1 tests -------------------------------------------------------------
-Name (time in us)                                Min       Max      Mean   StdDev    Median     IQR  Outliers  OPS (Kops/s)  Rounds  Iterations
------------------------------------------------------------------------------------------------------------------------------------------------
-test_benchmark_bulk_delete[redis_store]     125.9090  292.5620  140.7581  16.2714  134.9630  2.6730   302;870        7.1044    2775           1
------------------------------------------------------------------------------------------------------------------------------------------------
-```
-
-## How to test
 
 - Clone the repo and enter its root folder
 
@@ -292,7 +275,7 @@ test_benchmark_bulk_delete[redis_store]     125.9090  292.5620  140.7581  16.271
   pip install -r requirements.txt
   ```
 
-- Install the package in the virtual environment
+- Install orredis package in the virtual environment
 
   ```bash
   maturin develop
@@ -309,3 +292,19 @@ test_benchmark_bulk_delete[redis_store]     125.9090  292.5620  140.7581  16.271
   ```bash
   pytest --benchmark-compare --benchmark-autosave
   ```
+
+## Gratitude
+
+You might wish to offer support to the project and its maintainers. Please do.
+Martin, the initiator of the project, is adamant in staying in Uganda because there is more he loses by moving out of
+Uganda
+in search of employment opportunities. The opportunities in Uganda are very scarce. This is not the EU or US, so, yeah,
+If you wish to support him, please do on [his patreon page](https://www.patreon.com/user?u=78878966).
+
+Or...
+
+Better still, you could hire Martin or convince your company to hire him as a remote freelancer; and help him skip the
+tiring
+tests and stuff. Martin is so tired of those!
+
+Martin is very (very) grateful.
