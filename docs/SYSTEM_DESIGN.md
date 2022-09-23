@@ -1,5 +1,7 @@
 # System Design
 
+## Behaviour
+
 This is a description of what exactly is happening under the hood.
 
 - When a store is initialized, a rust struct called `Store` is instantiated. It has python bindings thanks
@@ -13,7 +15,7 @@ This is a description of what exactly is happening under the hood.
     - It receives the [pydantic](https://pydantic-docs.helpmanual.io/) `model` argument passed to it and
       calls [`model.schema()`](https://pydantic-docs.helpmanual.io/usage/schema/) on it in order to get
       the [JSONSchema](https://json-schema.org/) representation of that model
-    - It saves the schema in string form in the `collections_meta` hashmap on the store. The key associated with this
+    - It saves the schema in hashmap form in the `collections_meta` hashmap on the store. The key associated with this
       schema is the model's `model.__qualname__`
     - It also updates the other properties of that collection on that hashmap including `default_ttl`
       , `primary_key_field`, `nested_fields` etc.
@@ -28,8 +30,8 @@ This is a description of what exactly is happening under the hood.
 - The `collection.add_one()` method does the following:
     - It receives an instance of a [pydantic](https://pydantic-docs.helpmanual.io/) `model` and retrieves all its fields
       as a hashmap of field name and field value
-    - It generates a unique key basing on the `primary_key_field` of that collection and the `__qualname__` of that
-      model
+    - It generates a unique key basing on the `primary_key_field` of that collection and the `name` of that
+      collection
     - If there are `nested_fields`, it generates the unique key for those also basing on the collection they are
       attached to. It then replaces the values for those fields with those unique keys.
     - The data that corresponded to the `nested_fields` keys is then put in a pipeline to be inserted into redis.
@@ -113,8 +115,17 @@ This is a description of what exactly is happening under the hood.
 - The `collection.update_one()` method does what `collection.add_one()` does except that its second argument is already
   a hashmap.
 - The `collection.delete_many()` method does the following:
-    - It receives the ids that are to be deleted and converts them to unique keys basing on the collection's model'
-      s `__qualname__`.
+    - It receives the ids that are to be deleted and converts them to unique keys basing on the collection's
+      s `name`.
     - It then calls the [`DEL` command](https://redis.io/commands/del/) on each of them
       in [a pipeline](https://redis.io/docs/manual/pipelining/)
     - That's it!
+
+## Storage
+
+- Each record is simply stored as a [hash](https://redis.io/docs/data-types/#hashes)
+- In order to group hashes in collections, each hash key is automatically given a suffix that includes the collection's
+  name
+  for instance "Oliver Twist" which belongs to the "Book" collection becomes "Book_%&_Oliver Twist". This way if there
+  is
+  an "Oliver Twist" in the "User" collection, the latter will not be picked when "Oliver Twist" the book is queried for.
