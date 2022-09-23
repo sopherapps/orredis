@@ -1,11 +1,10 @@
+use chrono::{NaiveDate, NaiveDateTime};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::PyResult;
 use std::any::type_name;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::str::FromStr;
-
-use chrono::{NaiveDate, NaiveDateTime};
-use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::PyResult;
 
 /// Parses string into vectors that can be converted to py tuples
 pub fn parse_tuple<T>(value: &str) -> PyResult<Vec<T>>

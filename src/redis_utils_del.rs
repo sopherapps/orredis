@@ -1,11 +1,10 @@
+use pyo3::exceptions::{PyConnectionError, PyValueError};
+use pyo3::{Py, PyAny, PyResult, Python};
 use std::collections::HashMap;
 use std::str;
 
-use pyo3::exceptions::{PyConnectionError, PyValueError};
-use pyo3::{Py, PyAny, PyResult, Python};
-
-use crate::store::Record;
-use crate::{pyparsers, Model, Store};
+use crate::store_del::Record;
+use crate::{pyparsers_del, Model, Store};
 
 macro_rules! py_value_error {
     ($v:expr, $det:expr) => {
@@ -82,7 +81,7 @@ where
 
             let list_of_results: PyResult<Vec<HashMap<String, Py<PyAny>>>> = results
                 .into_iter()
-                .map(|item| pyparsers::parse_redis_single_raw_value(store, fields, item))
+                .map(|item| pyparsers_del::parse_redis_single_raw_value(store, fields, item))
                 .collect();
 
             Ok(list_of_results?)

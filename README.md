@@ -108,6 +108,7 @@ That is the purpose of this project.
 
 - python +v3.7
 - redis server (yes, you need have a redis server somewhere)
+- [pydantic](https://github.com/samuelcolvin/pydantic/)
 
 ## Quick Start
 
@@ -303,8 +304,6 @@ If you wish to support him, please do on [his patreon page](https://www.patreon.
 
 Or...
 
-Better still, you could hire Martin or convince your company to hire him as a remote freelancer; and help him skip the
-tiring
-tests and stuff. Martin is so tired of those!
+Better still, you could hire Martin or convince your company to hire him as a remote engineer :-)
 
 Martin is very (very) grateful.

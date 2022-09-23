@@ -1,14 +1,13 @@
-use std::collections::HashMap;
-use std::hash::Hash;
-use std::str::FromStr;
-
 use pyo3::exceptions::{PyKeyError, PyTypeError, PyValueError};
 use pyo3::prelude::PyModule;
 use pyo3::types::{IntoPyDict, PyDate, PyType};
 use pyo3::{IntoPy, Py, PyAny, PyResult, Python};
 use redis::FromRedisValue;
+use std::collections::HashMap;
+use std::hash::Hash;
+use std::str::FromStr;
 
-use crate::{parsers, Store};
+use crate::{parsers_del, Store};
 
 macro_rules! py_key_error {
     ($v:expr, $det:expr) => {
@@ -186,7 +185,7 @@ where
     T: FromStr + Hash + std::cmp::Eq + IntoPy<Py<PyAny>>,
     U: FromStr + IntoPy<Py<PyAny>>,
 {
-    let v: HashMap<T, U> = parsers::parse_dict(value)?;
+    let v: HashMap<T, U> = parsers_del::parse_dict(value)?;
     let v = Python::with_gil(|py| v.into_py(py));
     Ok(v)
 }
@@ -195,7 +194,7 @@ fn str_to_py_list<T>(value: &str) -> PyResult<Py<PyAny>>
 where
     T: FromStr + IntoPy<Py<PyAny>>,
 {
-    let v: Vec<T> = parsers::parse_list(value)?;
+    let v: Vec<T> = parsers_del::parse_list(value)?;
     let v = Python::with_gil(|py| v.into_py(py));
     Ok(v)
 }
@@ -204,7 +203,7 @@ fn str_to_py_tuple<T>(value: &str) -> PyResult<Py<PyAny>>
 where
     T: FromStr + IntoPy<Py<PyAny>>,
 {
-    let v: Vec<T> = parsers::parse_tuple(value)?;
+    let v: Vec<T> = parsers_del::parse_tuple(value)?;
     Python::with_gil(|py| {
         let v = v.into_py(py);
         let builtins = PyModule::import(py, "builtins")?;
@@ -216,13 +215,13 @@ where
 }
 
 fn str_to_py_datetime(value: &str) -> PyResult<Py<PyAny>> {
-    let timestamp = parsers::parse_datetime_to_timestamp(value)?;
+    let timestamp = parsers_del::parse_datetime_to_timestamp(value)?;
     let datetime = timestamp_to_py_date(timestamp)?;
     Ok(datetime)
 }
 
 fn str_to_py_date(value: &str) -> PyResult<Py<PyAny>> {
-    let timestamp = parsers::parse_date_to_timestamp(value)?;
+    let timestamp = parsers_del::parse_date_to_timestamp(value)?;
     let date = timestamp_to_py_date(timestamp)?;
     Ok(date)
 }

@@ -1,15 +1,14 @@
-use std::collections::HashMap;
-
 use pyo3::callback::IntoPyCallbackOutput;
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyType};
 use pyo3::{Py, PyAny, PyResult, Python};
 use redis::ConnectionLike;
+use std::collections::HashMap;
 
-use crate::model::ModelMeta;
-use crate::redis_utils::get_primary_key;
-use crate::{redis_utils, Model};
+use crate::model_del::ModelMeta;
+use crate::redis_utils_del::get_primary_key;
+use crate::{redis_utils_del, Model};
 
 const SELECT_SOME_FIELDS_FOR_ALL_IDS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local table_unpack = table.unpack or unpack local columns = {} local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if i > 1 then if args_tracker[k] then nested_columns[k] = true else  table.insert(columns, k) args_tracker[k] = true end end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then  local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end table.insert(filtered, parsed_data) end end cursor = result[1] until (cursor == '0') return filtered";
 const SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local nested_fields = {} for i, key in ipairs(ARGV) do if i > 1 then nested_fields[key] = true end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(filtered, parent) end end cursor = result[1] until (cursor == '0') return filtered";
@@ -35,7 +34,7 @@ impl Store {
     pub fn new(url: Py<PyAny>) -> PyResult<Self> {
         Python::with_gil(|py| -> PyResult<Store> {
             let url: &str = url.extract(py)?;
-            let conn = redis_utils::connect_to_redis(url)
+            let conn = redis_utils_del::connect_to_redis(url)
                 .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
 
             Ok(Store {
@@ -87,7 +86,7 @@ impl Store {
     pub fn reopen(&mut self) -> PyResult<()> {
         match self.conn {
             None => {
-                let new_conn = redis_utils::connect_to_redis(&self.url)
+                let new_conn = redis_utils_del::connect_to_redis(&self.url)
                     .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
                 self.conn = Some(new_conn);
                 Ok(())
@@ -128,14 +127,14 @@ impl Store {
         life_span: Option<usize>,
     ) -> PyResult<()> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            redis_utils::run_in_transaction(store, |store_in_tx, pipe| {
+            redis_utils_del::run_in_transaction(store, |store_in_tx, pipe| {
                 let mut data =
                     Python::with_gil(|py| -> PyResult<Model> { data.extract::<Model>(py) })?;
                 let key = data.get(&model_meta.primary_key_field)?;
                 let key = format!("{}", key);
                 data.set_default_values(&model_meta.default_values)?;
                 let record = Record::Full { data };
-                redis_utils::insert_on_pipeline(
+                redis_utils_del::insert_on_pipeline(
                     store_in_tx,
                     pipe,
                     model_name,
@@ -155,7 +154,7 @@ impl Store {
         life_span: Option<usize>,
     ) -> PyResult<()> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            redis_utils::run_in_transaction(store, |store_in_tx, pipe| {
+            redis_utils_del::run_in_transaction(store, |store_in_tx, pipe| {
                 Python::with_gil(|py| {
                     for item in data {
                         let mut item: Model = item.extract(py)?;
@@ -163,7 +162,7 @@ impl Store {
                         let key = format!("{}", key);
                         item.set_default_values(&model_meta.default_values)?;
                         let record = Record::Full { data: item };
-                        redis_utils::insert_on_pipeline(
+                        redis_utils_del::insert_on_pipeline(
                             store_in_tx,
                             pipe,
                             model_name,
@@ -189,8 +188,8 @@ impl Store {
         execute_if_model_exists(self, model_name, |store, _model_meta| {
             let key = format!("{}", id);
             let record = Record::Partial { data };
-            redis_utils::run_in_transaction(store, |store_in_tx, pipe| {
-                redis_utils::insert_on_pipeline(
+            redis_utils_del::run_in_transaction(store, |store_in_tx, pipe| {
+                redis_utils_del::insert_on_pipeline(
                     store_in_tx,
                     pipe,
                     model_name,
@@ -205,9 +204,9 @@ impl Store {
     }
 
     pub fn delete_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<()> {
-        redis_utils::run_in_transaction(self, |_store, pipe| {
+        redis_utils_del::run_in_transaction(self, |_store, pipe| {
             let key = format!("{}", id);
-            let primary_key = redis_utils::get_primary_key(model_name, &key);
+            let primary_key = redis_utils_del::get_primary_key(model_name, &key);
 
             pipe.del(&primary_key);
 
@@ -216,11 +215,11 @@ impl Store {
     }
 
     pub fn delete_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<()> {
-        redis_utils::run_in_transaction(self, |_store, pipe| {
+        redis_utils_del::run_in_transaction(self, |_store, pipe| {
             let keys: Vec<String> = ids
                 .into_iter()
                 .map(|k| format!("{}", k))
-                .map(|k| redis_utils::get_primary_key(model_name, &k))
+                .map(|k| redis_utils_del::get_primary_key(model_name, &k))
                 .collect();
 
             pipe.del(&keys);
@@ -231,7 +230,7 @@ impl Store {
 
     pub fn find_one(&mut self, model_name: &str, id: Py<PyAny>) -> PyResult<Py<PyAny>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let data = redis_utils::run_script(
+            let data = redis_utils_del::run_script(
                 store,
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
@@ -258,7 +257,7 @@ impl Store {
 
     pub fn find_many(&mut self, model_name: &str, ids: Vec<Py<PyAny>>) -> PyResult<Vec<Py<PyAny>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let data = redis_utils::run_script(
+            let data = redis_utils_del::run_script(
                 store,
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
@@ -283,7 +282,7 @@ impl Store {
 
     pub fn find_all(&mut self, model_name: &str) -> PyResult<Vec<Py<PyAny>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let data = redis_utils::run_script(
+            let data = redis_utils_del::run_script(
                 store,
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
@@ -307,7 +306,7 @@ impl Store {
         columns: Vec<&str>,
     ) -> PyResult<Py<PyAny>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            let data = redis_utils::run_script(
+            let data = redis_utils_del::run_script(
                 store,
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
@@ -349,11 +348,11 @@ impl Store {
                 .into_iter()
                 .map(|id| {
                     let key = format!("{}", id);
-                    redis_utils::get_primary_key(model_name, &key)
+                    redis_utils_del::get_primary_key(model_name, &key)
                 })
                 .collect();
 
-            redis_utils::run_script(
+            redis_utils_del::run_script(
                 store,
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
@@ -376,7 +375,7 @@ impl Store {
         columns: Vec<&str>,
     ) -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
         execute_if_model_exists(self, model_name, |store, model_meta| {
-            redis_utils::run_script(
+            redis_utils_del::run_script(
                 store,
                 &model_meta.fields,
                 |_store, pipe: &mut redis::Pipeline| -> PyResult<Vec<HashMap<String, Py<PyAny>>>> {
