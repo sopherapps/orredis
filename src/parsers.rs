@@ -1,10 +1,12 @@
-use chrono::{NaiveDate, NaiveDateTime};
-use pyo3::exceptions::{PyTypeError, PyValueError};
-use pyo3::PyResult;
 use std::any::type_name;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::str::FromStr;
+
+use chrono::{NaiveDate, NaiveDateTime};
+use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::PyResult;
+use redis::FromRedisValue;
 
 /// Parses string into vectors that can be converted to py tuples
 pub fn parse_tuple<T>(value: &str) -> PyResult<Vec<T>>
@@ -100,7 +102,7 @@ pub fn parse_date_to_timestamp(value: &str) -> PyResult<i64> {
 }
 
 /// Extracts the portions of string from a string representation of a given value
-fn extract_str_portions<'a>(
+pub(crate) fn extract_str_portions<'a>(
     value: &'a str,
     start_char: &'a str,
     end_char: &'a str,
@@ -113,4 +115,13 @@ fn extract_str_portions<'a>(
         .into_iter()
         .map(|v| v.trim().trim_end_matches("'").trim_start_matches("'"))
         .collect()
+}
+
+/// Redis value to pyresult type
+#[inline]
+pub(crate) fn redis_to_py<T>(v: &redis::Value) -> PyResult<T>
+where
+    T: FromRedisValue,
+{
+    redis::from_redis_value::<T>(v).or_else(|e| Err(PyValueError::new_err(e.to_string())))
 }

@@ -296,14 +296,4 @@ on under the hood.
 
 ## Gratitude
 
-You might wish to offer support to the project and its maintainers. Please do.
-Martin, the initiator of the project, is adamant in staying in Uganda because there is more he loses by moving out of
-Uganda
-in search of employment opportunities. The opportunities in Uganda are very scarce. This is not the EU or US, so, yeah,
-If you wish to support him, please do on [his patreon page](https://www.patreon.com/user?u=78878966).
-
-Or...
-
-Better still, you could hire Martin or convince your company to hire him as a remote engineer :-)
-
-Martin is very (very) grateful.
+To God.

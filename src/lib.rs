@@ -2,6 +2,7 @@ use pyo3::prelude::*;
 
 use store::{Collection, Store};
 
+mod parsers;
 mod records;
 mod schema;
 pub mod store;

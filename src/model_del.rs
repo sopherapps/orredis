@@ -1,12 +1,11 @@
 extern crate redis;
 
-use std::collections::hash_map;
-use std::collections::HashMap;
-use std::fmt::format;
-
 use pyo3::exceptions::{PyAttributeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyBool, PyDict, PyType};
+use std::collections::hash_map;
+use std::collections::HashMap;
+use std::fmt::format;
 
 /// The Model is a schema for each record to be saved in a given collection in redis
 #[derive(Clone)]
