@@ -9,6 +9,8 @@ use std::time::Duration;
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
+use r2d2::Pool;
+use redis::Client;
 
 use crate::records::{FieldType, Record};
 use crate::schema::Schema;
@@ -18,6 +20,7 @@ use crate::utils;
 pub(crate) struct Store {
     collections_meta: HashMap<String, CollectionMeta>,
     primary_key_field_map: HashMap<String, String>,
+    model_type_map: HashMap<String, Py<PyType>>,
     pool: r2d2::Pool<redis::Client>,
     default_ttl: Option<u64>,
     is_in_use: bool,
@@ -27,9 +30,9 @@ pub(crate) struct Store {
 #[pyclass(subclass)]
 pub(crate) struct CollectionMeta {
     pub(crate) schema: Schema,
-    model_type: Py<PyType>,
+    pub(crate) model_type: Py<PyType>,
     pub(crate) primary_key_field: String,
-    nested_fields: HashMap<String, String>, // field_name: reference_model_name
+    pub(crate) nested_fields: HashMap<String, String>, // field_name: reference_model_name
 }
 
 #[pyclass(subclass)]
@@ -39,6 +42,7 @@ pub(crate) struct Collection {
     pool: r2d2::Pool<redis::Client>,
     primary_key_field_map: HashMap<String, String>,
     default_ttl: Option<u64>,
+    model_type_map: HashMap<String, Py<PyType>>,
 }
 
 #[pymethods]
@@ -74,6 +78,7 @@ impl Store {
             pool,
             default_ttl,
             primary_key_field_map: Default::default(),
+            model_type_map: Default::default(),
             is_in_use: false,
         })
     }
@@ -91,13 +96,21 @@ impl Store {
         }
 
         Python::with_gil(|py| {
-            let schema: Schema = model.getattr(py, "schema")?.call0(py)?.extract(py)?;
+            let schema = model.getattr(py, "schema")?.call0(py)?;
+            let schema =
+                Schema::from_py_schema(schema, &self.primary_key_field_map, &self.model_type_map)?;
             let nested_fields = schema.extract_nested_fields();
             let model_name: String = model.getattr(py, "__qualname__")?.extract(py)?;
-            let meta = CollectionMeta::new(schema, model, primary_key_field.clone(), nested_fields);
+            let meta = CollectionMeta::new(
+                schema,
+                model.clone(),
+                primary_key_field.clone(),
+                nested_fields,
+            );
             self.collections_meta.insert(model_name.clone(), meta);
             self.primary_key_field_map
-                .insert(model_name, primary_key_field);
+                .insert(model_name.clone(), primary_key_field);
+            self.model_type_map.insert(model_name, model);
             Ok(())
         })
     }
@@ -115,6 +128,7 @@ impl Store {
                 meta.clone(),
                 self.default_ttl,
                 self.primary_key_field_map.clone(),
+                self.model_type_map.clone(),
             ))
         } else {
             Err(PyKeyError::new_err(format!(
@@ -129,7 +143,7 @@ impl Store {
 impl Collection {
     /// inserts one model instance into the redis store for this collection
     pub(crate) fn add_one(&self, item: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
-        let parent_record = Record::from_py_object(&item, &self.meta.schema)?;
+        let parent_record = Record::from_py_object(&item)?;
         let records = utils::prepare_record_to_insert(
             &self.name,
             &self.meta,
@@ -141,7 +155,7 @@ impl Collection {
             None => self.default_ttl,
             Some(v) => Some(v),
         };
-        utils::insert_records(&self.pool, &records, &ttl)
+        utils::insert_records(&self.pool, &records, &self.meta.schema, &ttl)
     }
 
     /// Inserts many model instances into the redis store for this collection all in a batch.
@@ -149,7 +163,7 @@ impl Collection {
     pub(crate) fn add_many(&self, items: Vec<Py<PyAny>>, ttl: Option<u64>) -> PyResult<()> {
         let mut records: Vec<(String, Record)> = Vec::with_capacity(2 * items.len());
         for item in items {
-            let parent_record = Record::from_py_object(&item, &self.meta.schema)?;
+            let parent_record = Record::from_py_object(&item)?;
             let mut records_to_insert: Vec<(String, Record)> = utils::prepare_record_to_insert(
                 &self.name,
                 &self.meta,
@@ -165,12 +179,12 @@ impl Collection {
             Some(v) => Some(v),
         };
 
-        utils::insert_records(&self.pool, &records, &ttl)
+        utils::insert_records(&self.pool, &records, &self.meta.schema, &ttl)
     }
 
     /// Updates the record of the given id with the provided data
     pub(crate) fn update_one(&self, id: &str, data: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
-        let parent_record = Record::from_py_dict(&data, &self.meta.schema)?;
+        let parent_record = Record::from_py_dict(&data)?;
         let records: Vec<(String, Record)> = utils::prepare_record_to_insert(
             &self.name,
             &self.meta,
@@ -184,7 +198,7 @@ impl Collection {
             Some(v) => Some(v),
         };
 
-        utils::insert_records(&self.pool, &records, &ttl)
+        utils::insert_records(&self.pool, &records, &self.meta.schema, &ttl)
     }
 
     /// Deletes the records that correspond to the given ids for this collection
@@ -208,7 +222,7 @@ impl Collection {
 
     /// Returns all the records found in this collection; returning them as models
     pub(crate) fn get_all(&self) -> PyResult<Vec<Py<PyAny>>> {
-        utils::get_all_records_in_collection(&self.name)
+        utils::get_all_records_in_collection(&self.pool, &self.name, &self.meta)
     }
 
     /// Returns the records whose ids are as given for this collection
@@ -235,7 +249,7 @@ impl Collection {
     /// Retrieves the all records in this collection, only returning the specified fields
     /// for each given record
     pub(crate) fn get_all_partially(&self, fields: Vec<String>) -> PyResult<Vec<Py<PyAny>>> {
-        utils::get_all_partial_records_in_collection(&self.pool, &self.name, &fields)
+        utils::get_all_partial_records_in_collection(&self.pool, &self.name, &self.meta, &fields)
     }
 
     /// Retrieves the records with the given ids in this collection, only returning
@@ -258,6 +272,7 @@ impl Collection {
         meta: CollectionMeta,
         default_ttl: Option<u64>,
         primary_key_field_map: HashMap<String, String>,
+        model_type_map: HashMap<String, Py<PyType>>,
     ) -> Self {
         Collection {
             name,
@@ -265,6 +280,7 @@ impl Collection {
             pool,
             default_ttl,
             primary_key_field_map,
+            model_type_map,
         }
     }
 }

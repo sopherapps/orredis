@@ -125,3 +125,19 @@ where
 {
     redis::from_redis_value::<T>(v).or_else(|e| Err(PyValueError::new_err(e.to_string())))
 }
+
+/// Parses a string into the given type, returning a PyValue error if it fails
+///
+/// # Errors
+///
+/// [PyValueError](PyValueError) is returned if parsing fails
+///
+#[inline]
+pub(crate) fn parse_str<T>(data: &str) -> PyResult<T>
+where
+    T: FromStr,
+    <T as FromStr>::Err: std::fmt::Display,
+{
+    data.parse::<T>()
+        .map_err(|e| PyValueError::new_err(e.to_string()))
+}
