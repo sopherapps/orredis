@@ -68,7 +68,7 @@ impl FieldType {
                 primary_key_field,
                 ..
             } => {
-                let data: HashMap<String, Py<PyAny>> = Python::with_gil(|py| data.extract(py))?;
+                let data = nested_py_object_to_hashmap(data)?;
                 match data.get(primary_key_field) {
                     None => Err(py_key_error!(
                         primary_key_field,
@@ -440,25 +440,24 @@ impl Record {
             } = v
             {
                 if let Some(obj) = data.get(k) {
-                    Python::with_gil(|py| -> PyResult<()> {
-                        let nested_data: HashMap<String, Py<PyAny>> = obj.extract(py)?;
-                        match nested_data.get(primary_key_field) {
-                            None => Err(py_key_error!(
+                    let nested_data = nested_py_object_to_hashmap(obj)?;
+                    match nested_data.get(primary_key_field) {
+                        None => {
+                            return Err(py_key_error!(
                                 primary_key_field,
                                 "primary key missing in in nested model"
-                            )),
-                            Some(pk) => {
-                                let pk = pk.to_string();
-                                result.push((
-                                    utils::generate_hash_key(model_name, &pk),
-                                    Self::Full { data: nested_data },
-                                    // FIXME: consider using Box to reduce the memory usage for cloning a schema
-                                    schema.clone(),
-                                ));
-                                Ok(())
-                            }
+                            ))
                         }
-                    })?;
+                        Some(pk) => {
+                            let pk = pk.to_string();
+                            result.push((
+                                utils::generate_hash_key(model_name, &pk),
+                                Self::Full { data: nested_data },
+                                // FIXME: consider using Box to reduce the memory usage for cloning a schema
+                                schema.clone(),
+                            ));
+                        }
+                    };
                 }
             }
         }
@@ -478,4 +477,15 @@ impl Record {
         let data: HashMap<String, Py<PyAny>> = Python::with_gil(|py| obj.extract(py))?;
         return Ok(Self::Partial { data });
     }
+}
+
+/// Converts a python nested object into a hashmap
+fn nested_py_object_to_hashmap(obj: &Py<PyAny>) -> PyResult<HashMap<String, Py<PyAny>>> {
+    Python::with_gil(|py| -> PyResult<HashMap<String, Py<PyAny>>> {
+        let v = match obj.extract::<HashMap<String, Py<PyAny>>>(py) {
+            Ok(v) => v,
+            Err(_) => obj.getattr(py, "dict")?.call0(py)?.extract(py)?,
+        };
+        Ok(v)
+    })
 }
