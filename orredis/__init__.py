@@ -1,6 +1,6 @@
 from orredis.orredis import Store
 
-from pydantic import BaseModel as Model
+from .abstract import Model
 
 __all__ = [
     Store,
