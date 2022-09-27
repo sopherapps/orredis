@@ -12,4 +12,4 @@ class Model(BaseModel):
         Creates a new instance of Model basing on the properties the current one has
         but with modifications using changes
         """
-        return Model(**{**self.dict(), **changes})
+        return self.__class__(**{**self.dict(), **changes})

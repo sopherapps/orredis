@@ -6,6 +6,17 @@ from orredis import Model
 from test.conftest import Book, redis_store_fixture, books, authors, Author
 
 
+def test_with_changes():
+    """with_changes creates a new instance with the right modifications"""
+    book = books[0]
+    changes = {"title": "Yooo another book", "in_stock": not book.in_stock}
+    new_book = book.with_changes(changes=changes)
+    assert book != new_book
+    for k, v in changes.items():
+        value = getattr(new_book, k)
+        assert value == v
+
+
 def test_create_collection_without_primary_key(redis_store):
     """Throws error when a collection is created without a primary_kry_field"""
 
