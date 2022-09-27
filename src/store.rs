@@ -30,7 +30,9 @@ pub(crate) struct CollectionMeta {
     pub(crate) schema: Schema,
     pub(crate) model_type: Py<PyType>,
     pub(crate) primary_key_field: String,
-    pub(crate) nested_fields: HashMap<String, String>, // field_name: reference_model_name
+    pub(crate) nested_fields: HashMap<String, String>,
+    // field_name: reference_model_name
+    pub(crate) nested_fields_as_vec: Vec<String>,
 }
 
 #[pyclass(subclass)]
@@ -289,11 +291,15 @@ impl CollectionMeta {
         primary_key_field: String,
         nested_fields: HashMap<String, String>,
     ) -> Self {
+        let nested_fields_as_vec: Vec<String> =
+            nested_fields.iter().map(|(k, _)| k.to_string()).collect();
+
         CollectionMeta {
             schema,
             model_type,
             primary_key_field,
             nested_fields,
+            nested_fields_as_vec,
         }
     }
 }

@@ -75,64 +75,24 @@ pub(crate) fn get_records_by_id(
     meta: &CollectionMeta,
     ids: &Vec<String>,
 ) -> PyResult<Vec<Py<PyAny>>> {
-    let mut conn = pool
-        .get()
-        .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
-    let mut pipe = redis::pipe();
-
     let ids: Vec<String> = ids
         .into_iter()
         .map(|k| generate_hash_key(collection_name, &k.to_string()))
         .collect();
 
-    let nested_fields: Vec<&String> = meta.nested_fields.iter().map(|(k, _)| k).collect();
-
-    pipe.cmd("EVAL")
-        .arg(SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT)
-        .arg(ids.len())
-        .arg(ids)
-        .arg(nested_fields);
-
-    let result: redis::Value = pipe
-        .query(conn.deref_mut())
-        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
-
-    let results = result
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .get(0)
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
-
-    let empty_value = redis::Value::Bulk(vec![]);
-
-    // skip any parsing if the data is empty
-    if results.len() == 1 && results[0] == empty_value {
-        return Ok(vec![]);
-    }
-
-    let list_of_results: PyResult<Vec<Py<PyAny>>> = results
-        .into_iter()
-        .map(|item| match item.as_map_iter() {
-            None => Err(py_value_error!(item, "redis value is not a map")),
-            Some(item) => {
-                let data = item
-                    .map(|(k, v)| {
-                        let key = redis_to_py::<String>(k)?;
-                        let value = match meta.schema.get_type(&key) {
-                            Some(field_type) => field_type.redis_to_py(v),
-                            None => Err(py_key_error!(&key, "key found in data but not in schema")),
-                        }?;
-                        Ok((key, value))
-                    })
-                    .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
-                Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py))))
-            }
-        })
-        .collect();
-
-    Ok(list_of_results?)
+    run_script(
+        pool,
+        meta,
+        |pipe| {
+            pipe.cmd("EVAL")
+                .arg(SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT)
+                .arg(ids.len())
+                .arg(ids)
+                .arg(&meta.nested_fields_as_vec);
+            Ok(())
+        },
+        |data| Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py)))),
+    )
 }
 
 /// Gets records in the collection of the given name from redis with the given ids,
@@ -144,66 +104,25 @@ pub(crate) fn get_partial_records_by_id(
     ids: &Vec<String>,
     fields: &Vec<String>,
 ) -> PyResult<Vec<Py<PyAny>>> {
-    let mut conn = pool
-        .get()
-        .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
-    let mut pipe = redis::pipe();
-
     let ids: Vec<String> = ids
         .into_iter()
         .map(|k| generate_hash_key(collection_name, &k.to_string()))
         .collect();
 
-    // FIXME: Cache this computation on say the meta instance itself.
-    let nested_fields: Vec<&String> = meta.nested_fields.iter().map(|(k, _)| k).collect();
-
-    pipe.cmd("EVAL")
-        .arg(SELECT_SOME_FIELDS_FOR_SOME_IDS_SCRIPT)
-        .arg(ids.len())
-        .arg(ids)
-        .arg(fields)
-        .arg(nested_fields);
-
-    let result: redis::Value = pipe
-        .query(conn.deref_mut())
-        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
-
-    let results = result
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .get(0)
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
-
-    let empty_value = redis::Value::Bulk(vec![]);
-
-    // skip any parsing if the data is empty
-    if results.len() == 1 && results[0] == empty_value {
-        return Ok(vec![]);
-    }
-
-    let list_of_results: PyResult<Vec<Py<PyAny>>> = results
-        .into_iter()
-        .map(|item| match item.as_map_iter() {
-            None => Err(py_value_error!(item, "redis value is not a map")),
-            Some(item) => {
-                let data = item
-                    .map(|(k, v)| {
-                        let key = redis_to_py::<String>(k)?;
-                        let value = match meta.schema.get_type(&key) {
-                            Some(field_type) => field_type.redis_to_py(v),
-                            None => Err(py_key_error!(&key, "key found in data but not in schema")),
-                        }?;
-                        Ok((key, value))
-                    })
-                    .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
-                Ok(Python::with_gil(|py| data.into_py(py)))
-            }
-        })
-        .collect();
-
-    Ok(list_of_results?)
+    run_script(
+        pool,
+        meta,
+        |pipe| {
+            pipe.cmd("EVAL")
+                .arg(SELECT_SOME_FIELDS_FOR_SOME_IDS_SCRIPT)
+                .arg(ids.len())
+                .arg(ids)
+                .arg(fields)
+                .arg(&meta.nested_fields_as_vec);
+            Ok(())
+        },
+        |data| Ok(Python::with_gil(|py| data.into_py(py))),
+    )
 }
 
 /// Gets all records in the collection of the given name from redis,
@@ -214,82 +133,61 @@ pub(crate) fn get_all_partial_records_in_collection(
     meta: &CollectionMeta,
     fields: &Vec<String>,
 ) -> PyResult<Vec<Py<PyAny>>> {
-    let mut conn = pool
-        .get()
-        .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
-    let mut pipe = redis::pipe();
-
-    // FIXME: Cache this computation on say the meta instance itself.
-    let nested_fields: Vec<&String> = meta.nested_fields.iter().map(|(k, _)| k).collect();
-
-    pipe.cmd("EVAL")
-        .arg(SELECT_SOME_FIELDS_FOR_ALL_IDS_SCRIPT)
-        .arg(0)
-        .arg(generate_collection_key_pattern(collection_name))
-        .arg(fields)
-        .arg(&nested_fields);
-
-    let result: redis::Value = pipe
-        .query(conn.deref_mut())
-        .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
-
-    let results = result
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .get(0)
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
-
-    let empty_value = redis::Value::Bulk(vec![]);
-
-    // skip any parsing if the data is empty
-    if results.len() == 1 && results[0] == empty_value {
-        return Ok(vec![]);
-    }
-
-    let list_of_results: PyResult<Vec<Py<PyAny>>> = results
-        .into_iter()
-        .map(|item| match item.as_map_iter() {
-            None => Err(py_value_error!(item, "redis value is not a map")),
-            Some(item) => {
-                let data = item
-                    .map(|(k, v)| {
-                        let key = redis_to_py::<String>(k)?;
-                        let value = match meta.schema.get_type(&key) {
-                            Some(field_type) => field_type.redis_to_py(v),
-                            None => Err(py_key_error!(&key, "key found in data but not in schema")),
-                        }?;
-                        Ok((key, value))
-                    })
-                    .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
-                Ok(Python::with_gil(|py| data.into_py(py)))
-            }
-        })
-        .collect();
-
-    Ok(list_of_results?)
+    run_script(
+        pool,
+        meta,
+        |pipe| {
+            pipe.cmd("EVAL")
+                .arg(SELECT_SOME_FIELDS_FOR_ALL_IDS_SCRIPT)
+                .arg(0)
+                .arg(generate_collection_key_pattern(collection_name))
+                .arg(fields)
+                .arg(&meta.nested_fields_as_vec);
+            Ok(())
+        },
+        |data| Ok(Python::with_gil(|py| data.into_py(py))),
+    )
 }
 
-// FIXME: extract a function for parsing data from running scripts
 /// Gets all the records that are in the given collection
 pub(crate) fn get_all_records_in_collection(
     pool: &r2d2::Pool<redis::Client>,
     collection_name: &str,
     meta: &CollectionMeta,
 ) -> PyResult<Vec<Py<PyAny>>> {
+    run_script(
+        pool,
+        meta,
+        |pipe| {
+            pipe.cmd("EVAL")
+                .arg(SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT)
+                .arg(0)
+                .arg(generate_collection_key_pattern(collection_name))
+                .arg(&meta.nested_fields_as_vec);
+            Ok(())
+        },
+        |data| Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py)))),
+    )
+}
+
+/// Runs a lua script, and handles the response, transforming it into a list of hashmaps which
+/// is then transformed into a list of Py<PyAny> using the item_parser function
+pub(crate) fn run_script<T, F>(
+    pool: &r2d2::Pool<redis::Client>,
+    meta: &CollectionMeta,
+    script: T,
+    item_parser: F,
+) -> PyResult<Vec<Py<PyAny>>>
+where
+    T: FnOnce(&mut redis::Pipeline) -> PyResult<()>,
+    F: FnOnce(HashMap<String, Py<PyAny>>) -> PyResult<Py<PyAny>> + Copy,
+{
     let mut conn = pool
         .get()
         .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
     let mut pipe = redis::pipe();
 
-    let nested_fields: Vec<&String> = meta.nested_fields.iter().map(|(k, _)| k).collect();
-
-    pipe.cmd("EVAL")
-        .arg(SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT)
-        .arg(0)
-        .arg(generate_collection_key_pattern(collection_name))
-        .arg(&nested_fields);
+    script(&mut pipe)?;
 
     let result: redis::Value = pipe
         .query(conn.deref_mut())
@@ -325,7 +223,9 @@ pub(crate) fn get_all_records_in_collection(
                         Ok((key, value))
                     })
                     .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
-                Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py))))
+                let data = item_parser(data)?;
+                Ok(data)
+                // Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py))))
             }
         })
         .collect();
