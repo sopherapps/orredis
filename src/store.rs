@@ -74,7 +74,6 @@ impl Store {
         let pool = pool
             .build(client)
             .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
-        // let pool = Arc::new(pool);
 
         Ok(Store {
             collections_meta: Default::default(),

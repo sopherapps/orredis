@@ -105,6 +105,13 @@ pub(crate) fn get_records_by_id(
         .as_sequence()
         .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
 
+    let empty_value = redis::Value::Bulk(vec![]);
+
+    // skip any parsing if the data is empty
+    if results.len() == 1 && results[0] == empty_value {
+        return Ok(vec![]);
+    }
+
     let list_of_results: PyResult<Vec<Py<PyAny>>> = results
         .into_iter()
         .map(|item| match item.as_map_iter() {
@@ -169,6 +176,13 @@ pub(crate) fn get_partial_records_by_id(
         .as_sequence()
         .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
 
+    let empty_value = redis::Value::Bulk(vec![]);
+
+    // skip any parsing if the data is empty
+    if results.len() == 1 && results[0] == empty_value {
+        return Ok(vec![]);
+    }
+
     let list_of_results: PyResult<Vec<Py<PyAny>>> = results
         .into_iter()
         .map(|item| match item.as_map_iter() {
@@ -227,6 +241,13 @@ pub(crate) fn get_all_partial_records_in_collection(
         .as_sequence()
         .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
 
+    let empty_value = redis::Value::Bulk(vec![]);
+
+    // skip any parsing if the data is empty
+    if results.len() == 1 && results[0] == empty_value {
+        return Ok(vec![]);
+    }
+
     let list_of_results: PyResult<Vec<Py<PyAny>>> = results
         .into_iter()
         .map(|item| match item.as_map_iter() {
@@ -250,6 +271,7 @@ pub(crate) fn get_all_partial_records_in_collection(
     Ok(list_of_results?)
 }
 
+// FIXME: extract a function for parsing data from running scripts
 /// Gets all the records that are in the given collection
 pub(crate) fn get_all_records_in_collection(
     pool: &r2d2::Pool<redis::Client>,
@@ -280,6 +302,13 @@ pub(crate) fn get_all_records_in_collection(
         .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
         .as_sequence()
         .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
+
+    let empty_value = redis::Value::Bulk(vec![]);
+
+    // skip any parsing if the data is empty
+    if results.len() == 1 && results[0] == empty_value {
+        return Ok(vec![]);
+    }
 
     let list_of_results: PyResult<Vec<Py<PyAny>>> = results
         .into_iter()

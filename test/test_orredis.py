@@ -73,7 +73,6 @@ def test_add_one(store):
     add_one inserts a single record into redis
     """
     book_collection = store.get_collection(Book)
-    author_collection = store.get_collection(Author)
 
     book = book_collection.get_one(id=books[0].title)
     assert book is None
