@@ -211,7 +211,6 @@ def test_get_one_partially_non_existent_id_with_existent_columns(store):
     """
     book_collection = store.get_collection(Book)
     book_collection.add_many(books)
-    # Fixme: this seems to be returning some error instead of None
     response = book_collection.get_one_partially(id="Some strange book", fields=["author", "title"])
     assert response is None
 
