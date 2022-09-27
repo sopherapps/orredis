@@ -88,7 +88,7 @@ pub(crate) fn get_records_by_id(
                 .arg(SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT)
                 .arg(ids.len())
                 .arg(ids)
-                .arg(&meta.nested_fields_as_vec);
+                .arg(&meta.nested_fields);
             Ok(())
         },
         |data| Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py)))),
@@ -118,7 +118,7 @@ pub(crate) fn get_partial_records_by_id(
                 .arg(ids.len())
                 .arg(ids)
                 .arg(fields)
-                .arg(&meta.nested_fields_as_vec);
+                .arg(&meta.nested_fields);
             Ok(())
         },
         |data| Ok(Python::with_gil(|py| data.into_py(py))),
@@ -142,7 +142,7 @@ pub(crate) fn get_all_partial_records_in_collection(
                 .arg(0)
                 .arg(generate_collection_key_pattern(collection_name))
                 .arg(fields)
-                .arg(&meta.nested_fields_as_vec);
+                .arg(&meta.nested_fields);
             Ok(())
         },
         |data| Ok(Python::with_gil(|py| data.into_py(py))),
@@ -163,7 +163,7 @@ pub(crate) fn get_all_records_in_collection(
                 .arg(SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT)
                 .arg(0)
                 .arg(generate_collection_key_pattern(collection_name))
-                .arg(&meta.nested_fields_as_vec);
+                .arg(&meta.nested_fields);
             Ok(())
         },
         |data| Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py)))),

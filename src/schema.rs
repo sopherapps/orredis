@@ -35,12 +35,12 @@ impl Schema {
     }
 
     /// Extracts all nested fields in this schema instance
-    pub(crate) fn extract_nested_fields(&self) -> HashMap<String, String> {
+    pub(crate) fn extract_nested_fields(&self) -> Vec<String> {
         self.mapping
             .iter()
             .filter_map(|(k, v)| {
-                if let FieldType::Nested { model_name, .. } = v {
-                    Some((k.to_string(), model_name.to_string()))
+                if let FieldType::Nested { .. } = v {
+                    Some(k.to_string())
                 } else {
                     None
                 }
