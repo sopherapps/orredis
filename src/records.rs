@@ -36,7 +36,7 @@ pub(crate) enum Record {
 pub(crate) enum FieldType {
     Nested {
         model_name: String,
-        schema: Schema,
+        schema: Box<Schema>,
         primary_key_field: String,
         model_type: Py<PyType>,
     },
@@ -361,7 +361,7 @@ impl FieldType {
 
             Ok(Self::Nested {
                 model_name,
-                schema,
+                schema: Box::new(schema),
                 primary_key_field,
                 model_type,
             })
@@ -427,9 +427,9 @@ impl Record {
     pub(crate) fn pop_nested_records(
         record: &Self,
         schema: &Schema,
-    ) -> PyResult<Vec<(String, Self, Schema)>> {
+    ) -> PyResult<Vec<(String, Self, Box<Schema>)>> {
         let data = record.extract_data();
-        let mut result: Vec<(String, Self, Schema)> = vec![];
+        let mut result: Vec<(String, Self, Box<Schema>)> = vec![];
 
         for (k, v) in &schema.mapping {
             if let FieldType::Nested {
@@ -453,7 +453,6 @@ impl Record {
                             result.push((
                                 utils::generate_hash_key(model_name, &pk),
                                 Self::Full { data: nested_data },
-                                // FIXME: consider using Box to reduce the memory usage for cloning a schema
                                 schema.clone(),
                             ));
                         }

@@ -30,7 +30,7 @@ macro_rules! py_key_error {
 /// Inserts the (primary key, record) tuples passed to it in a batch into the redis store
 pub(crate) fn insert_records(
     pool: &r2d2::Pool<redis::Client>,
-    records: &Vec<(String, Record, Schema)>,
+    records: &Vec<(String, Record, Box<Schema>)>,
     ttl: &Option<u64>,
 ) -> PyResult<()> {
     let mut conn = pool
@@ -237,8 +237,8 @@ pub(crate) fn prepare_record_to_insert(
     meta: &CollectionMeta,
     parent_record: Record,
     id: Option<&str>,
-) -> PyResult<Vec<(String, Record, Schema)>> {
-    let mut records: Vec<(String, Record, Schema)> = Vec::with_capacity(2);
+) -> PyResult<Vec<(String, Record, Box<Schema>)>> {
+    let mut records: Vec<(String, Record, Box<Schema>)> = Vec::with_capacity(2);
     let primary_key = match id {
         None => parent_record.generate_primary_key(collection_name, &meta.primary_key_field)?,
         Some(id) => generate_hash_key(collection_name, id),

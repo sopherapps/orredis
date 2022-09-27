@@ -27,7 +27,7 @@ pub(crate) struct Store {
 #[derive(Clone)]
 #[pyclass(subclass)]
 pub(crate) struct CollectionMeta {
-    pub(crate) schema: Schema,
+    pub(crate) schema: Box<Schema>,
     pub(crate) model_type: Py<PyType>,
     pub(crate) primary_key_field: String,
     pub(crate) nested_fields: Vec<String>,
@@ -120,7 +120,7 @@ impl Store {
             let nested_fields = schema.extract_nested_fields();
             let model_name: String = model.getattr(py, "__qualname__")?.extract(py)?;
             let meta = CollectionMeta::new(
-                schema,
+                Box::new(schema),
                 model.clone(),
                 primary_key_field.clone(),
                 nested_fields,
@@ -171,10 +171,10 @@ impl Collection {
     /// Inserts many model instances into the redis store for this collection all in a batch.
     /// This is more efficient than repeatedly calling add_one() because only one network request is made to redis
     pub(crate) fn add_many(&self, items: Vec<Py<PyAny>>, ttl: Option<u64>) -> PyResult<()> {
-        let mut records: Vec<(String, Record, Schema)> = Vec::with_capacity(2 * items.len());
+        let mut records: Vec<(String, Record, Box<Schema>)> = Vec::with_capacity(2 * items.len());
         for item in items {
             let parent_record = Record::from_py_object(&item)?;
-            let mut records_to_insert: Vec<(String, Record, Schema)> =
+            let mut records_to_insert =
                 utils::prepare_record_to_insert(&self.name, &self.meta, parent_record, None)?;
             records.append(&mut records_to_insert);
         }
@@ -190,7 +190,7 @@ impl Collection {
     /// Updates the record of the given id with the provided data
     pub(crate) fn update_one(&self, id: &str, data: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
         let parent_record = Record::from_py_dict(&data)?;
-        let records: Vec<(String, Record, Schema)> =
+        let records =
             utils::prepare_record_to_insert(&self.name, &self.meta, parent_record, Some(id))?;
 
         let ttl = match ttl {
@@ -284,7 +284,7 @@ impl Collection {
 impl CollectionMeta {
     /// Instantiates a new collection meta
     pub(crate) fn new(
-        schema: Schema,
+        schema: Box<Schema>,
         model_type: Py<PyType>,
         primary_key_field: String,
         nested_fields: Vec<String>,
