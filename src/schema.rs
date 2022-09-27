@@ -6,7 +6,7 @@ use pyo3::types::{PyDict, PyType};
 
 use crate::records::FieldType;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Schema {
     pub mapping: HashMap<String, FieldType>,
 }

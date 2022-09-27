@@ -30,8 +30,7 @@ macro_rules! py_key_error {
 /// Inserts the (primary key, record) tuples passed to it in a batch into the redis store
 pub(crate) fn insert_records(
     pool: &r2d2::Pool<redis::Client>,
-    records: &Vec<(String, Record)>,
-    scheme: &Schema,
+    records: &Vec<(String, Record, Schema)>,
     ttl: &Option<u64>,
 ) -> PyResult<()> {
     let mut conn = pool
@@ -41,8 +40,8 @@ pub(crate) fn insert_records(
 
     // start transaction
     pipe.cmd("MULTI");
-    for (pk, record) in records {
-        let key_value_pairs = record.to_redis_key_value_pairs(scheme)?;
+    for (pk, record, schema) in records {
+        let key_value_pairs = record.to_redis_key_value_pairs(schema)?;
         pipe.hset_multiple(pk, &key_value_pairs);
 
         if let Some(life_span) = ttl {
@@ -309,18 +308,17 @@ pub(crate) fn get_all_records_in_collection(
 pub(crate) fn prepare_record_to_insert(
     collection_name: &str,
     meta: &CollectionMeta,
-    primary_key_field_map: &HashMap<String, String>,
-    mut parent_record: Record,
+    parent_record: Record,
     id: Option<&str>,
-) -> PyResult<Vec<(String, Record)>> {
-    let mut records: Vec<(String, Record)> = Vec::with_capacity(2);
+) -> PyResult<Vec<(String, Record, Schema)>> {
+    let mut records: Vec<(String, Record, Schema)> = Vec::with_capacity(2);
     let primary_key = match id {
         None => parent_record.generate_primary_key(collection_name, &meta.primary_key_field)?,
         Some(id) => generate_hash_key(collection_name, id),
     };
     let mut nested_records = Record::pop_nested_records(&parent_record, &meta.schema)?;
     records.append(&mut nested_records);
-    records.push((primary_key, parent_record));
+    records.push((primary_key, parent_record, meta.schema.clone()));
     Ok(records)
 }
 

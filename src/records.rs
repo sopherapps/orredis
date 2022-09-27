@@ -29,13 +29,13 @@ macro_rules! to_py {
     };
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum Record {
     Full { data: HashMap<String, Py<PyAny>> },
     Partial { data: HashMap<String, Py<PyAny>> },
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) enum FieldType {
     Nested {
         model_name: String,
@@ -118,26 +118,26 @@ impl FieldType {
                 }
             },
             FieldType::Dict { value: type_, .. } => {
-                let v = parsers::redis_to_py::<String>(data)?;
-                let data: HashMap<String, Py<PyAny>> = Self::parse_dict_str(&v, type_)?;
+                let data = parsers::redis_to_py::<String>(data)?;
+                let data: HashMap<String, Py<PyAny>> = Self::parse_dict_str(&data, type_)?;
                 to_py!(data)
             }
             FieldType::List { items: type_, .. } => {
-                let v = parsers::redis_to_py::<String>(data)?;
-                let data: Vec<Py<PyAny>> = Self::parse_list_str(&v, type_)?;
+                let data = parsers::redis_to_py::<String>(data)?;
+                let data: Vec<Py<PyAny>> = Self::parse_list_str(&data, type_)?;
                 to_py!(data)
             }
             FieldType::Tuple {
                 items: type_list, ..
             } => {
-                let v = parsers::redis_to_py::<String>(data)?;
-                let data: Vec<Py<PyAny>> = FieldType::parse_tuple_str(&v, type_list)?;
+                let data = parsers::redis_to_py::<String>(data)?;
+                let data: Vec<Py<PyAny>> = FieldType::parse_tuple_str(&data, type_list)?;
                 Python::with_gil(|py| {
-                    let v = v.into_py(py);
+                    let data = data.into_py(py);
                     let builtins = PyModule::import(py, "builtins")?;
                     builtins
                         .getattr("tuple")?
-                        .call1((&v,))?
+                        .call1((&data,))?
                         .extract::<Py<PyAny>>()
                 })
             }
@@ -154,7 +154,8 @@ impl FieldType {
                 to_py!(v)
             }
             FieldType::Bool => {
-                let v = parsers::redis_to_py::<bool>(data)?;
+                let data = parsers::redis_to_py::<String>(data)?;
+                let v = parsers::parse_str::<bool>(&data)?;
                 to_py!(v)
             }
             FieldType::Datetime => {
@@ -377,15 +378,21 @@ impl Record {
     /// Generates the key-value pairs for this instance to be inserted into redis.
     pub(crate) fn to_redis_key_value_pairs(
         &self,
-        scheme: &Schema,
+        schema: &Schema,
     ) -> PyResult<Vec<(String, String)>> {
         let data = self.extract_data();
 
         data.iter()
             .map(|(k, v)| {
                 let key = k.clone();
-                let value = match scheme.get_type(&key) {
-                    None => Err(py_key_error!(&key, "missing key in schema")),
+                let value = match schema.get_type(&key) {
+                    None => Err(py_key_error!(
+                        &key,
+                        format!(
+                            "missing key in schema: {:?}, for record: {:?}",
+                            schema, self
+                        )
+                    )),
                     Some(type_) => type_.py_to_str(v),
                 }?;
                 Ok((key, value))
@@ -435,13 +442,16 @@ impl Record {
     pub(crate) fn pop_nested_records(
         record: &Self,
         schema: &Schema,
-    ) -> PyResult<Vec<(String, Self)>> {
+    ) -> PyResult<Vec<(String, Self, Schema)>> {
         let data = record.extract_data();
-        let mut result: Vec<(String, Self)> = vec![];
+        let mut result: Vec<(String, Self, Schema)> = vec![];
 
         for (k, v) in &schema.mapping {
             if let FieldType::Nested {
-                primary_key_field, ..
+                primary_key_field,
+                model_name,
+                schema,
+                ..
             } = v
             {
                 if let Some(obj) = data.get(k) {
@@ -454,7 +464,12 @@ impl Record {
                             )),
                             Some(pk) => {
                                 let pk = pk.to_string();
-                                result.push((pk.clone(), Self::Full { data: nested_data }));
+                                result.push((
+                                    utils::generate_hash_key(model_name, &pk),
+                                    Self::Full { data: nested_data },
+                                    // FIXME: consider using Box to reduce the memory usage for cloning a schema
+                                    schema.clone(),
+                                ));
                                 Ok(())
                             }
                         }
@@ -468,7 +483,8 @@ impl Record {
 
     /// Creates a Record (Full) instance from a python object
     pub(crate) fn from_py_object(obj: &Py<PyAny>) -> PyResult<Self> {
-        let data: HashMap<String, Py<PyAny>> = Python::with_gil(|py| obj.extract(py))?;
+        let data: HashMap<String, Py<PyAny>> =
+            Python::with_gil(|py| obj.getattr(py, "dict")?.call0(py)?.extract(py))?;
         return Ok(Self::Full { data });
     }
 
