@@ -12,11 +12,12 @@ def test_create_collection_without_primary_key(redis_store):
     class ModelWithoutPrimaryKey(Model):
         title: str
 
-    with pytest.raises(AttributeError, match=r"_primary_key_field"):
+    with pytest.raises(TypeError, match=r"primary_key_field"):
         redis_store.create_collection(ModelWithoutPrimaryKey)
 
-    with pytest.raises(ValueError, match=r"_primary_key_field must be a string"):
-        redis_store.register_model(ModelWithoutPrimaryKey, primary_key_field=3)
+    with pytest.raises(TypeError,
+                       match=r"argument 'primary_key_field': 'int' object cannot be converted to 'PyString'"):
+        redis_store.create_collection(ModelWithoutPrimaryKey, primary_key_field=3)
 
 
 @pytest.mark.parametrize("store", redis_store_fixture)

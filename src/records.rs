@@ -345,7 +345,11 @@ impl FieldType {
                 Some(k) => Ok(k.to_string()),
                 None => Err(py_key_error!(
                     &model_name,
-                    "model name missing in primary key field map"
+                    format!(
+                        "model name missing in primary key field map. \
+                    Try to create the {} collection first",
+                        &model_name
+                    )
                 )),
             }?;
 

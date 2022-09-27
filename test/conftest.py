@@ -70,8 +70,8 @@ def redis_server(unused_tcp_port):
 def redis_store(redis_server):
     """Sets up a redis store using the redis_server fixture and adds the book model to it"""
     store = Store(url=f"redis://localhost:{redis_server}/1")
-    store.create_collection(Book, primary_key_field="title")
     store.create_collection(Author, primary_key_field="name")
+    store.create_collection(Book, primary_key_field="title")
     yield store
     store.clear()
 

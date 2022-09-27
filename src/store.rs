@@ -3,6 +3,7 @@ extern crate r2d2;
 extern crate redis;
 
 use std::collections::HashMap;
+use std::ops::DerefMut;
 use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
@@ -48,6 +49,13 @@ pub(crate) struct Collection {
 #[pymethods]
 impl Store {
     /// Initializes the Store
+    #[args(
+        url,
+        pool_size = 5,
+        default_ttl = "None",
+        timeout = "None",
+        max_lifetime = "None"
+    )]
     #[new]
     pub fn new(
         url: String,
@@ -81,6 +89,22 @@ impl Store {
             model_type_map: Default::default(),
             is_in_use: false,
         })
+    }
+
+    /// Clears all keys on this redis instance
+    #[args(asynchronous = "false")]
+    #[pyo3(text_signature = "($self, asynchronous)")]
+    pub fn clear(&mut self, asynchronous: bool) -> PyResult<()> {
+        let mut conn = self
+            .pool
+            .get()
+            .map_err(|e| PyConnectionError::new_err(e.to_string()))?;
+        let arg = if asynchronous { "ASYNC" } else { "SYNC" };
+
+        redis::cmd("FLUSHALL")
+            .arg(arg)
+            .query(conn.deref_mut())
+            .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))
     }
 
     /// Creates a new collection for the given model and adds it to the store instance
