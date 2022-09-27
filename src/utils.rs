@@ -202,35 +202,33 @@ where
         .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
 
     let empty_value = redis::Value::Bulk(vec![]);
+    let mut list_of_results: Vec<Py<PyAny>> = Vec::with_capacity(results.len());
 
-    // skip any parsing if the data is empty
-    if results.len() == 1 && results[0] == empty_value {
-        return Ok(vec![]);
+    for item in results {
+        if *item != empty_value {
+            match item.as_map_iter() {
+                None => return Err(py_value_error!(item, "redis value is not a map")),
+                Some(item) => {
+                    let data = item
+                        .map(|(k, v)| {
+                            let key = redis_to_py::<String>(k)?;
+                            let value = match meta.schema.get_type(&key) {
+                                Some(field_type) => field_type.redis_to_py(v),
+                                None => {
+                                    Err(py_key_error!(&key, "key found in data but not in schema"))
+                                }
+                            }?;
+                            Ok((key, value))
+                        })
+                        .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
+                    let data = item_parser(data)?;
+                    list_of_results.push(data);
+                }
+            }
+        }
     }
 
-    let list_of_results: PyResult<Vec<Py<PyAny>>> = results
-        .into_iter()
-        .map(|item| match item.as_map_iter() {
-            None => Err(py_value_error!(item, "redis value is not a map")),
-            Some(item) => {
-                let data = item
-                    .map(|(k, v)| {
-                        let key = redis_to_py::<String>(k)?;
-                        let value = match meta.schema.get_type(&key) {
-                            Some(field_type) => field_type.redis_to_py(v),
-                            None => Err(py_key_error!(&key, "key found in data but not in schema")),
-                        }?;
-                        Ok((key, value))
-                    })
-                    .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
-                let data = item_parser(data)?;
-                Ok(data)
-                // Python::with_gil(|py| meta.model_type.call(py, (), Some(data.into_py_dict(py))))
-            }
-        })
-        .collect();
-
-    Ok(list_of_results?)
+    Ok(list_of_results)
 }
 
 /// Prepares the records for inserting
