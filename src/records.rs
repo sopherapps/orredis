@@ -1,11 +1,8 @@
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use pyo3::exceptions::{PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyList, PyType};
-use pyo3::PyDowncastError;
-use redis::FromRedisValue;
 
 use crate::schema::Schema;
 use crate::utils::generate_hash_key;
@@ -423,18 +420,6 @@ impl Record {
             Record::Full { data } => data,
             Record::Partial { data } => data,
         }
-    }
-
-    /// Converts the current instance into a py model object.
-    pub(crate) fn to_py_object(&self, model_type: &Py<PyType>) -> PyResult<Py<PyAny>> {
-        let data = self.extract_data();
-        Python::with_gil(|py| model_type.call(py, (), Some(data.into_py_dict(py))))
-    }
-
-    /// Converts the current instance into a py dictionary.
-    pub(crate) fn to_py_dict(&self) -> PyResult<Py<PyAny>> {
-        let data = self.extract_data();
-        to_py!(data.clone())
     }
 
     /// Extracts any nested records

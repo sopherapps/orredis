@@ -4,16 +4,13 @@ extern crate redis;
 
 use std::collections::HashMap;
 use std::ops::DerefMut;
-use std::sync::{mpsc, Arc};
 use std::time::Duration;
 
-use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
+use pyo3::exceptions::{PyConnectionError, PyKeyError};
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyType};
-use r2d2::Pool;
-use redis::Client;
+use pyo3::types::PyType;
 
-use crate::records::{FieldType, Record};
+use crate::records::Record;
 use crate::schema::Schema;
 use crate::utils;
 
@@ -41,9 +38,7 @@ pub(crate) struct Collection {
     name: String,
     meta: CollectionMeta,
     pool: r2d2::Pool<redis::Client>,
-    primary_key_field_map: HashMap<String, String>,
     default_ttl: Option<u64>,
-    model_type_map: HashMap<String, Py<PyType>>,
 }
 
 #[pymethods]
@@ -151,8 +146,6 @@ impl Store {
                 pool,
                 meta.clone(),
                 self.default_ttl,
-                self.primary_key_field_map.clone(),
-                self.model_type_map.clone(),
             ))
         } else {
             Err(PyKeyError::new_err(format!(
@@ -279,16 +272,12 @@ impl Collection {
         pool: r2d2::Pool<redis::Client>,
         meta: CollectionMeta,
         default_ttl: Option<u64>,
-        primary_key_field_map: HashMap<String, String>,
-        model_type_map: HashMap<String, Py<PyType>>,
     ) -> Self {
         Collection {
             name,
             meta,
             pool,
             default_ttl,
-            primary_key_field_map,
-            model_type_map,
         }
     }
 }

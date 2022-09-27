@@ -1,83 +1,9 @@
-use std::any::type_name;
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::str::FromStr;
 
 use chrono::{NaiveDate, NaiveDateTime};
-use pyo3::exceptions::{PyTypeError, PyValueError};
+use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 use redis::FromRedisValue;
-
-/// Parses string into vectors that can be converted to py tuples
-pub fn parse_tuple<T>(value: &str) -> PyResult<Vec<T>>
-where
-    T: FromStr,
-{
-    let mut v: Vec<T> = Default::default();
-    let items = extract_str_portions(value, "(", ")", ",");
-
-    for item in items {
-        let parsed_item = item.parse::<T>().or(Err(PyTypeError::new_err(
-            "typing.Tuple fields can only have one type.",
-        )))?;
-        v.push(parsed_item);
-    }
-
-    Ok(v)
-}
-
-/// Parses strings into vectors that can be converted into python lists
-pub fn parse_list<T>(value: &str) -> PyResult<Vec<T>>
-where
-    T: FromStr,
-{
-    let mut v: Vec<T> = Default::default();
-    let items = extract_str_portions(value, "[", "]", ",");
-    for item in items {
-        let parsed_item = item.parse::<T>().or(Err(PyTypeError::new_err(format!(
-            "failed to parse {} to List of {}",
-            value,
-            type_name::<T>()
-        ))))?;
-        v.push(parsed_item);
-    }
-
-    Ok(v)
-}
-
-/// Parses a string representation of a dictionary into a hashmap
-pub fn parse_dict<T, U>(value: &str) -> PyResult<HashMap<T, U>>
-where
-    T: FromStr + Hash + std::cmp::Eq,
-    U: FromStr,
-{
-    let mut v: HashMap<T, U> = Default::default();
-    let items = extract_str_portions(value, "{", "}", ",");
-
-    for item in items {
-        let kv_items = extract_str_portions(item, "", "", ":");
-
-        if kv_items.len() == 2 {
-            let (key, value) = (kv_items[0], kv_items[1]);
-
-            let key = key.parse::<T>().or(Err(PyTypeError::new_err(format!(
-                "failed to parse key {} to type of {}",
-                value,
-                type_name::<T>()
-            ))))?;
-
-            let value = value.parse::<U>().or(Err(PyTypeError::new_err(format!(
-                "failed to parse value {} to type of {}",
-                value,
-                type_name::<U>()
-            ))))?;
-
-            v.insert(key, value);
-        }
-    }
-
-    Ok(v)
-}
 
 /// Parses datetime strings into timestamps using the "YYYY-MM-DD HH:MM:SS.mmmmmm" format which was the default format
 /// on my PC :-)
