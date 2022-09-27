@@ -233,13 +233,43 @@ library_collection.delete_many(ids=["The Grand Library"])
 This package has been benchmarked against some of the pre-existing ORMs for redis and this is how it stacks up against
 them:
 
-### Speed
+### orredis
 
-TBD
+``` 
+------------------------------------------------------- benchmark: 11 tests -------------------------------------------------------
+Name (time in us)                                                       Mean                   Min                    Max          
+-----------------------------------------------------------------------------------------------------------------------------------
+benchmark_delete_many[book_collection-Wuthering Heights]            162.2823 (1.0)        125.1710 (1.0)         458.7760 (1.05)   
+benchmark_bulk_delete[book_collection]                              174.8342 (1.08)       136.3030 (1.09)        438.2150 (1.0)    
+benchmark_update_one[book_collection-Wuthering Heights-data0]       362.1201 (2.23)       322.2040 (2.57)        603.1530 (1.38)   
+benchmark_add_one[book_collection-book0]                            392.8555 (2.42)       345.3070 (2.76)      1,167.7090 (2.66)   
+benchmark_get_one_partially[book_collection-book0]                  561.6671 (3.46)       371.0450 (2.96)      5,990.9940 (13.67)  
+benchmark_get_one[book_collection-book0]                            649.5707 (4.00)       519.7480 (4.15)      2,322.9230 (5.30)   
+benchmark_get_many_partially[book_collection]                       717.9341 (4.42)       586.9100 (4.69)      9,488.5110 (21.65)  
+benchmark_get_many[book_collection]                                 970.1149 (5.98)       842.1320 (6.73)      2,575.1890 (5.88)   
+benchmark_add_many[book_collection]                               1,081.6991 (6.67)       927.3880 (7.41)     16,983.2820 (38.76)  
+benchmark_get_all_partially[book_collection]                      1,148.7172 (7.08)       999.3550 (7.98)      2,558.8430 (5.84)   
+benchmark_get_all[book_collection]                                1,750.5837 (10.79)    1,475.3700 (11.79)     4,050.1090 (9.24)   
+-----------------------------------------------------------------------------------------------------------------------------------
 
-### Memory
+```
 
-TBD
+### pydantic-redis
+
+``` 
+benchmark_delete[redis_store-Wuthering Heights]              166.7813 (1.0)        151.4560 (1.0)        537.9630 (1.0)    
+benchmark_bulk_delete[redis_store]                           197.9722 (1.19)       169.5110 (1.12)       751.8540 (1.40)   
+benchmark_update[redis_store-Wuthering Heights-data0]        372.0253 (2.23)       328.2080 (2.17)     1,825.8930 (3.39)   
+benchmark_single_insert[redis_store-book0]                   425.9535 (2.55)       389.1270 (2.57)       637.8000 (1.19)   
+benchmark_select_columns_for_one_id[redis_store-book0]       478.0758 (2.87)       440.3790 (2.91)       878.7980 (1.63)   
+benchmark_select_all_for_one_id[redis_store-book0]           544.4497 (3.26)       490.4720 (3.24)     1,346.3720 (2.50)   
+benchmark_select_columns_for_some_items[redis_store]         609.6302 (3.66)       526.4430 (3.48)     3,640.8700 (6.77)   
+benchmark_select_some_items[redis_store]                     726.0504 (4.35)       679.9930 (4.49)     2,105.7010 (3.91)   
+benchmark_select_columns[redis_store]                        919.1155 (5.51)       823.5510 (5.44)     2,066.8600 (3.84)   
+benchmark_bulk_insert[redis_store]                         1,124.5457 (6.74)       995.9630 (6.58)     1,410.6550 (2.62)   
+benchmark_select_default[redis_store]                      1,189.2962 (7.13)     1,067.1630 (7.05)     2,223.7830 (4.13)   
+---------------------------------------------------------------------------------------------------------------------------
+```
 
 ## Contributions
 
@@ -292,6 +322,12 @@ on under the hood.
 
   ```bash
   pytest --benchmark-compare --benchmark-autosave
+  ```
+
+  OR the summary
+
+  ```bash
+  pytest test/test_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short 
   ```
 
 ## Gratitude
