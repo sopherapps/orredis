@@ -68,8 +68,8 @@ def test_benchmark_update_one(benchmark, collection, title, data):
 
 
 @pytest.mark.parametrize("collection, title", delete_books_fixture)
-def test_benchmark_delete_many(benchmark, collection, title):
-    """Benchmarks the delete_many() operation"""
+def test_benchmark_delete(benchmark, collection, title):
+    """Benchmarks the delete_many() for one id only operation"""
     collection.add_many(books)
     benchmark(collection.delete_many, ids=[title])
 

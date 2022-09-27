@@ -239,7 +239,7 @@ them:
 ------------------------------------------------------- benchmark: 11 tests -------------------------------------------------------
 Name (time in us)                                                       Mean                   Min                    Max          
 -----------------------------------------------------------------------------------------------------------------------------------
-benchmark_delete_many[book_collection-Wuthering Heights]            162.2823 (1.0)        125.1710 (1.0)         458.7760 (1.05)   
+benchmark_delete[book_collection-Wuthering Heights]                 162.2823 (1.0)        125.1710 (1.0)         458.7760 (1.05)   
 benchmark_bulk_delete[book_collection]                              174.8342 (1.08)       136.3030 (1.09)        438.2150 (1.0)    
 benchmark_update_one[book_collection-Wuthering Heights-data0]       362.1201 (2.23)       322.2040 (2.57)        603.1530 (1.38)   
 benchmark_add_one[book_collection-book0]                            392.8555 (2.42)       345.3070 (2.76)      1,167.7090 (2.66)   
