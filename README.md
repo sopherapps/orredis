@@ -239,17 +239,17 @@ them:
 ------------------------------------------------------- benchmark: 11 tests -------------------------------------------------------
 Name (time in us)                                                       Mean                   Min                    Max          
 -----------------------------------------------------------------------------------------------------------------------------------
-benchmark_delete[book_collection-Wuthering Heights]                 162.2823 (1.0)        125.1710 (1.0)         458.7760 (1.05)   
-benchmark_bulk_delete[book_collection]                              174.8342 (1.08)       136.3030 (1.09)        438.2150 (1.0)    
-benchmark_update_one[book_collection-Wuthering Heights-data0]       362.1201 (2.23)       322.2040 (2.57)        603.1530 (1.38)   
-benchmark_add_one[book_collection-book0]                            392.8555 (2.42)       345.3070 (2.76)      1,167.7090 (2.66)   
-benchmark_get_one_partially[book_collection-book0]                  561.6671 (3.46)       371.0450 (2.96)      5,990.9940 (13.67)  
-benchmark_get_one[book_collection-book0]                            649.5707 (4.00)       519.7480 (4.15)      2,322.9230 (5.30)   
-benchmark_get_many_partially[book_collection]                       717.9341 (4.42)       586.9100 (4.69)      9,488.5110 (21.65)  
-benchmark_get_many[book_collection]                                 970.1149 (5.98)       842.1320 (6.73)      2,575.1890 (5.88)   
-benchmark_add_many[book_collection]                               1,081.6991 (6.67)       927.3880 (7.41)     16,983.2820 (38.76)  
-benchmark_get_all_partially[book_collection]                      1,148.7172 (7.08)       999.3550 (7.98)      2,558.8430 (5.84)   
-benchmark_get_all[book_collection]                                1,750.5837 (10.79)    1,475.3700 (11.79)     4,050.1090 (9.24)   
+benchmark_delete[book_collection-Wuthering Heights]                 151.0114 (1.0)        123.8350 (1.0)       1,146.6680 (1.51)   
+benchmark_bulk_delete[book_collection]                              162.7776 (1.08)       136.5440 (1.10)        760.2830 (1.0)    
+benchmark_update_one[book_collection-Wuthering Heights-data0]       277.2496 (1.84)       243.0730 (1.96)      1,197.9610 (1.58)   
+benchmark_add_one[book_collection-book0]                            331.0807 (2.19)       290.7080 (2.35)      1,198.8450 (1.58)   
+benchmark_get_one_partially[book_collection-book0]                  413.6980 (2.74)       360.6480 (2.91)        916.8420 (1.21)   
+benchmark_get_one[book_collection-book0]                            552.4152 (3.66)       490.9210 (3.96)        995.1700 (1.31)   
+benchmark_get_many_partially[book_collection]                       624.0380 (4.13)       580.0580 (4.68)        927.8860 (1.22)   
+benchmark_add_many[book_collection]                                 930.8538 (6.16)       816.7090 (6.60)     18,898.8960 (24.86)  
+benchmark_get_many[book_collection]                                 943.4722 (6.25)       854.3360 (6.90)      1,646.4760 (2.17)   
+benchmark_get_all_partially[book_collection]                      1,098.6723 (7.28)       995.0980 (8.04)      1,519.5430 (2.00)   
+benchmark_get_all[book_collection]                                1,628.8283 (10.79)    1,506.7600 (12.17)     2,381.7670 (3.13)   
 -----------------------------------------------------------------------------------------------------------------------------------
 
 ```
