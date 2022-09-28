@@ -1,20 +1,19 @@
 use std::str::FromStr;
 
-use chrono::{NaiveDate, NaiveDateTime};
+use chrono::{NaiveDate, TimeZone, Utc};
 use pyo3::exceptions::PyValueError;
 use pyo3::PyResult;
 use redis::FromRedisValue;
 
-/// Parses datetime strings into timestamps using the "YYYY-MM-DD HH:MM:SS.mmmmmm" format which was the default format
-/// on my PC :-)
-/// for python i.e. "YYYY-MM-DD HH:MM:SS.mmmmmm" (python) or "%Y-%m-%d %H:%M:%S.%f" (rust)
+/// Parses datetime strings into timestamps using the "%Y-%m-%d %H:%M:%S.6%f%:z" format which was the default format
+/// on my PC :-) for UTC times
 pub fn parse_datetime_to_timestamp(value: &str) -> PyResult<i64> {
-    let datetime = NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M:%S%.6f").or(Err(
-        PyValueError::new_err(format!(
-            "error parsing {} as 'YYYY-MM-DD HH:MM:SS.mmmmmm'",
+    let datetime = Utc
+        .datetime_from_str(value, "%Y-%m-%d %H:%M:%S%.6f%:z")
+        .or(Err(PyValueError::new_err(format!(
+            "error parsing {} as '%Y-%m-%d %H:%M:%S%.6f%:z'",
             value
-        )),
-    ))?;
+        ))))?;
     Ok(datetime.timestamp())
 }
 

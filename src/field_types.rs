@@ -122,7 +122,7 @@ impl FieldType {
             FieldType::Datetime => {
                 let v = parsers::redis_to_py::<String>(data)?;
                 let timestamp = parsers::parse_datetime_to_timestamp(&v)?;
-                utils::timestamp_to_py_date(timestamp)
+                utils::timestamp_to_py_datetime(timestamp)
             }
             FieldType::Date => {
                 let v = parsers::redis_to_py::<String>(data)?;
@@ -204,7 +204,7 @@ impl FieldType {
             }
             FieldType::Datetime => {
                 let timestamp = parsers::parse_datetime_to_timestamp(data)?;
-                utils::timestamp_to_py_date(timestamp)
+                utils::timestamp_to_py_datetime(timestamp)
             }
             FieldType::Date => {
                 let timestamp = parsers::parse_date_to_timestamp(data)?;

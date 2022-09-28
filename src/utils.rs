@@ -3,7 +3,7 @@ use std::ops::DerefMut;
 
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{IntoPyDict, PyDate};
+use pyo3::types::{timezone_utc, IntoPyDict, PyDate, PyDateTime};
 
 use crate::field_types::FieldType;
 use crate::parsers::redis_to_py;
@@ -247,34 +247,42 @@ pub(crate) fn prepare_record_to_insert(
     let mut parent_record: Vec<(String, String)> = Vec::with_capacity(obj.len());
 
     for (field, type_) in &schema.mapping {
-        if let FieldType::Nested {
-            model_name,
-            primary_key_field: nested_pk_field,
-            schema: nested_schema,
-            ..
-        } = type_
-        {
-            if let Some(obj) = obj.get(field) {
-                let mut data = prepare_record_to_insert(
-                    &model_name,
-                    &nested_schema,
-                    obj,
-                    &nested_pk_field,
-                    None,
-                )?;
-                if let Some((k, _)) = data.last() {
-                    parent_record.push((field.clone(), k.clone()));
-                    results.append(&mut data);
+        if let Some(v) = obj.get(field) {
+            match type_ {
+                FieldType::Nested {
+                    model_name,
+                    primary_key_field: nested_pk_field,
+                    schema: nested_schema,
+                    ..
+                } => {
+                    let mut data = prepare_record_to_insert(
+                        &model_name,
+                        &nested_schema,
+                        v,
+                        &nested_pk_field,
+                        None,
+                    )?;
+                    if let Some((k, _)) = data.last() {
+                        parent_record.push((field.clone(), k.clone()));
+                        results.append(&mut data);
+                    }
                 }
-            }
-        } else {
-            if let Some(v) = obj.get(field) {
-                let mut value = v.to_string();
-                if let FieldType::Bool = type_ {
-                    value = value.to_lowercase()
+                FieldType::Datetime => Python::with_gil(|py| -> PyResult<()> {
+                    // convert every datetime into a UTC datetime
+                    let v = v
+                        .getattr(py, "astimezone")?
+                        .call(py, (timezone_utc(py),), None)?;
+                    parent_record.push((field.clone(), v.to_string()));
+                    Ok(())
+                })?,
+                FieldType::Bool => {
+                    let v = v.to_string().to_lowercase();
+                    parent_record.push((field.clone(), v));
                 }
-                parent_record.push((field.clone(), value));
-            }
+                _ => {
+                    parent_record.push((field.clone(), v.to_string()));
+                }
+            };
         }
     }
 
@@ -312,6 +320,14 @@ pub(crate) fn generate_collection_key_pattern(collection_name: &str) -> String {
 pub(crate) fn timestamp_to_py_date(timestamp: i64) -> PyResult<Py<PyAny>> {
     Python::with_gil(|py| -> PyResult<Py<PyAny>> {
         let v = PyDate::from_timestamp(py, timestamp)?;
+        Ok(Py::from(v))
+    })
+}
+
+/// Converts a timestamp into a python date/datetime
+pub(crate) fn timestamp_to_py_datetime(timestamp: i64) -> PyResult<Py<PyAny>> {
+    Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+        let v = PyDateTime::from_timestamp(py, timestamp as f64, Some(timezone_utc(py)))?;
         Ok(Py::from(v))
     })
 }
