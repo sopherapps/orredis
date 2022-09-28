@@ -233,24 +233,24 @@ library_collection.delete_many(ids=["The Grand Library"])
 This package has been benchmarked against some of the pre-existing ORMs for redis and this is how it stacks up against
 them:
 
-### orredis
+### orredis (optimized)
 
 ``` 
-------------------------------------------------------- benchmark: 11 tests -------------------------------------------------------
-Name (time in us)                                                       Mean                   Min                    Max          
------------------------------------------------------------------------------------------------------------------------------------
-benchmark_delete[book_collection-Wuthering Heights]                 151.0114 (1.0)        123.8350 (1.0)       1,146.6680 (1.51)   
-benchmark_bulk_delete[book_collection]                              162.7776 (1.08)       136.5440 (1.10)        760.2830 (1.0)    
-benchmark_update_one[book_collection-Wuthering Heights-data0]       277.2496 (1.84)       243.0730 (1.96)      1,197.9610 (1.58)   
-benchmark_add_one[book_collection-book0]                            331.0807 (2.19)       290.7080 (2.35)      1,198.8450 (1.58)   
-benchmark_get_one_partially[book_collection-book0]                  413.6980 (2.74)       360.6480 (2.91)        916.8420 (1.21)   
-benchmark_get_one[book_collection-book0]                            552.4152 (3.66)       490.9210 (3.96)        995.1700 (1.31)   
-benchmark_get_many_partially[book_collection]                       624.0380 (4.13)       580.0580 (4.68)        927.8860 (1.22)   
-benchmark_add_many[book_collection]                                 930.8538 (6.16)       816.7090 (6.60)     18,898.8960 (24.86)  
-benchmark_get_many[book_collection]                                 943.4722 (6.25)       854.3360 (6.90)      1,646.4760 (2.17)   
-benchmark_get_all_partially[book_collection]                      1,098.6723 (7.28)       995.0980 (8.04)      1,519.5430 (2.00)   
-benchmark_get_all[book_collection]                                1,628.8283 (10.79)    1,506.7600 (12.17)     2,381.7670 (3.13)   
------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------------- benchmark: 11 tests -----------------------------------------------------
+Name (time in us)                                                     Mean                 Min                    Max          
+-------------------------------------------------------------------------------------------------------------------------------
+benchmark_delete[book_collection-Wuthering Heights]                73.2168 (1.0)       59.7780 (1.0)         293.7510 (1.20)   
+benchmark_bulk_delete[book_collection]                             76.1323 (1.04)      63.0270 (1.05)        244.3730 (1.0)    
+benchmark_update_one[book_collection-Wuthering Heights-data0]     124.3903 (1.70)     102.1310 (1.71)        296.9740 (1.22)   
+benchmark_add_one[book_collection-book0]                          155.5704 (2.12)     129.7560 (2.17)        393.7910 (1.61)   
+benchmark_get_one_partially[book_collection-book0]                169.0863 (2.31)     137.9540 (2.31)        338.4000 (1.38)   
+benchmark_get_one[book_collection-book0]                          202.6351 (2.77)     167.3440 (2.80)        580.5420 (2.38)   
+benchmark_get_many_partially[book_collection]                     213.8824 (2.92)     181.9030 (3.04)        513.8720 (2.10)   
+benchmark_get_many[book_collection]                               265.6097 (3.63)     221.0640 (3.70)        641.8550 (2.63)   
+benchmark_get_all_partially[book_collection]                      298.5290 (4.08)     258.2100 (4.32)        606.2200 (2.48)   
+benchmark_add_many[book_collection]                               352.7892 (4.82)     287.3370 (4.81)     15,414.2120 (63.08)  
+benchmark_get_all[book_collection]                                398.7546 (5.45)     356.0230 (5.96)        813.4560 (3.33)   
+-------------------------------------------------------------------------------------------------------------------------------
 
 ```
 
@@ -310,6 +310,12 @@ on under the hood.
 
   ```bash
   maturin develop
+  ```
+
+  For optimized build use:
+
+  ```bash
+  maturin develop -r
   ```
 
 - Run the tests command
