@@ -9,7 +9,7 @@ name = "orredis"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.16.5", features = ["extension-module"] }
+pyo3 = { version = "0.17.1", features = ["extension-module"] }
 redis = { version = "0.21.*", features = ["r2d2"] }
 r2d2 = "0.8.10"
 chrono = "0.4"
