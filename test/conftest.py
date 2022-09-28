@@ -1,5 +1,5 @@
 import socket
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Tuple, List
 
 import pytest
@@ -13,12 +13,12 @@ class Author(Model):
     name: str
     active_years: Tuple[int, int]
 
-
 class Book(Model):
     title: str
     author: Author
     rating: float
     published_on: date
+    last_updated: datetime = datetime(year=2022, month=9, day=17, hour=1, minute=30, tzinfo=timezone.utc)
     tags: List[str] = []
     in_stock: bool = True
 

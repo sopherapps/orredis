@@ -1,4 +1,5 @@
 """Tests for the redis orm"""
+from datetime import datetime, timezone, timedelta
 
 import pytest
 
@@ -6,7 +7,41 @@ from orredis import Model
 from test.conftest import Book, redis_store_fixture, books, authors, Author
 
 
-def test_with_changes():
+def test_model_eq():
+    """the custom eq should be able to handle datetime objects"""
+
+    class Data(Model):
+        size: int
+        name: str
+
+    class Task(Data):
+        time: datetime
+
+    ts = datetime(year=2022, month=7, day=9, minute=8, second=7, tzinfo=timezone(timedelta(hours=5)))
+    other_ts = datetime(year=2022, month=7, day=9, minute=8, second=7, tzinfo=timezone(timedelta(hours=2)))
+
+    assert Data(size=9, name="foo") == Data(size=9, name="foo")
+    assert Data(size=9, name="foo") != Data(size=9, name="foor")
+    assert Data(size=9, name="foo") != Data(size=59, name="foo")
+
+    assert Data(size=9, name="foo") == dict(size=9, name="foo")
+    assert Data(size=9, name="foo") != dict(size=9, name="foor")
+    assert Data(size=9, name="foo") != dict(size=59, name="foo")
+
+    assert Task(time=ts, size=9, name="foo") == Task(time=ts.astimezone(timezone.utc), size=9, name="foo")
+    assert Task(time=ts, size=9, name="foo") == Task(time=ts, size=9, name="foo")
+    assert Task(time=ts, size=9, name="foo") != Task(time=ts.astimezone(timezone.utc), size=9, name="foor")
+    assert Task(time=ts, size=9, name="foo") != Task(time=ts.astimezone(timezone.utc), size=59, name="foo")
+    assert Task(time=ts, size=9, name="foo") != Task(time=other_ts, size=9, name="foo")
+
+    assert Task(time=ts, size=9, name="foo") == dict(time=ts.astimezone(timezone.utc), size=9, name="foo")
+    assert Task(time=ts, size=9, name="foo") == dict(time=ts, size=9, name="foo")
+    assert Task(time=ts, size=9, name="foo") != dict(time=ts.astimezone(timezone.utc), size=9, name="foor")
+    assert Task(time=ts, size=9, name="foo") != dict(time=ts.astimezone(timezone.utc), size=59, name="foo")
+    assert Task(time=ts, size=9, name="foo") != dict(time=other_ts, size=9, name="foo")
+
+
+def test_model_with_changes():
     """with_changes creates a new instance with the right modifications"""
     book = books[0]
     changes = {"title": "Yooo another book", "in_stock": not book.in_stock}
