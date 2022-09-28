@@ -115,7 +115,7 @@ That is the purpose of this project.
 - Install the package
 
   ```bash
-  pip install pydantic-redis
+  pip install orredis
   ```
 
 - Import the `Store` and the `Model` classes and use accordingly
@@ -254,7 +254,7 @@ benchmark_get_all[book_collection]                                398.7546 (5.45
 
 ```
 
-### pydantic-redis
+### [pydantic-redis (pure-python)](https://github.com/sopherapps/pydantic-redis)
 
 ``` 
 benchmark_delete[redis_store-Wuthering Heights]              166.7813 (1.0)        151.4560 (1.0)        537.9630 (1.0)    
@@ -280,7 +280,7 @@ First thing is you probably need to know a bit of rust. Consider reading
 the [rust book](https://doc.rust-lang.org/book/).
 It can be a very interesting read, albeit a long one.
 
-When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTIONS_GUIDELINE.md)
+When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTING.md)
 
 Then you can read through the [SYSTEM DESIGN](./docs/SYSTEM_DESIGN.md) document to get a feel of what exactly is going
 on under the hood.
