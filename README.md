@@ -154,9 +154,9 @@ class Library(Model):
 #   it fails to establish a connection.
 store = Store(url="redis://localhost:6379/0", pool_size=5, default_ttl=3000, timeout=1000)
 # - `identifier_fields` are the properties on the model that uniquely identify a single record. They form an id.
+store.create_collection(model=Author, primary_key_field="name")
 store.create_collection(model=Book, primary_key_field="title")
 store.create_collection(model=Library, primary_key_field="name")
-store.create_collection(model=Author, primary_key_field="name")
 
 # sample authors. You can create as many as you wish anywhere in the code
 

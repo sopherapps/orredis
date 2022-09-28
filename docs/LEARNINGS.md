@@ -14,3 +14,5 @@
 - The other reason is you will find yourself having to do less cloning (thus more memory and CPU efficiency) all in the
   name of
   trying to keep the borrow-checker happy.
+- If you wish to add threading to the rust side, make sure the code to be run in the thread never acquires the GIL lock
+  or else you will most likely have a deadlock
