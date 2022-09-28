@@ -10,7 +10,6 @@ use pyo3::exceptions::{PyConnectionError, PyKeyError};
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 
-use crate::records::Record;
 use crate::schema::Schema;
 use crate::utils;
 
@@ -159,8 +158,13 @@ impl Store {
 impl Collection {
     /// inserts one model instance into the redis store for this collection
     pub(crate) fn add_one(&self, item: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
-        let parent_record = Record::from_py_object(&item)?;
-        let records = utils::prepare_record_to_insert(&self.name, &self.meta, parent_record, None)?;
+        let records = utils::prepare_record_to_insert(
+            &self.name,
+            &self.meta.schema,
+            &item,
+            &self.meta.primary_key_field,
+            None,
+        )?;
         let ttl = match ttl {
             None => self.default_ttl,
             Some(v) => Some(v),
@@ -171,11 +175,15 @@ impl Collection {
     /// Inserts many model instances into the redis store for this collection all in a batch.
     /// This is more efficient than repeatedly calling add_one() because only one network request is made to redis
     pub(crate) fn add_many(&self, items: Vec<Py<PyAny>>, ttl: Option<u64>) -> PyResult<()> {
-        let mut records: Vec<(String, Record, Box<Schema>)> = Vec::with_capacity(2 * items.len());
+        let mut records: Vec<(String, Vec<(String, String)>)> = Vec::with_capacity(2 * items.len());
         for item in items {
-            let parent_record = Record::from_py_object(&item)?;
-            let mut records_to_insert =
-                utils::prepare_record_to_insert(&self.name, &self.meta, parent_record, None)?;
+            let mut records_to_insert = utils::prepare_record_to_insert(
+                &self.name,
+                &self.meta.schema,
+                &item,
+                &self.meta.primary_key_field,
+                None,
+            )?;
             records.append(&mut records_to_insert);
         }
 
@@ -189,9 +197,13 @@ impl Collection {
 
     /// Updates the record of the given id with the provided data
     pub(crate) fn update_one(&self, id: &str, data: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
-        let parent_record = Record::from_py_dict(&data)?;
-        let records =
-            utils::prepare_record_to_insert(&self.name, &self.meta, parent_record, Some(id))?;
+        let records = utils::prepare_record_to_insert(
+            &self.name,
+            &self.meta.schema,
+            &data,
+            &self.meta.primary_key_field,
+            Some(id),
+        )?;
 
         let ttl = match ttl {
             None => self.default_ttl,

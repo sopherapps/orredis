@@ -5,7 +5,6 @@ use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyList, PyType};
 
 use crate::schema::Schema;
-use crate::utils::generate_hash_key;
 use crate::{parsers, utils};
 
 macro_rules! py_key_error {
@@ -24,12 +23,6 @@ macro_rules! to_py {
     ($v:expr) => {
         Ok(Python::with_gil(|py| $v.into_py(py)))
     };
-}
-
-#[derive(Clone, Debug)]
-pub(crate) enum Record {
-    Full { data: HashMap<String, Py<PyAny>> },
-    Partial { data: HashMap<String, Py<PyAny>> },
 }
 
 #[derive(Clone, Debug)]
@@ -59,35 +52,6 @@ pub(crate) enum FieldType {
 }
 
 impl FieldType {
-    /// Converts a Py<PyAny> reference into a String.
-    /// This is useful in converting data to be inserted into redis, from python to rust
-    pub(crate) fn py_to_str(&self, data: &Py<PyAny>) -> PyResult<String> {
-        match self {
-            FieldType::Nested {
-                model_name,
-                primary_key_field,
-                ..
-            } => {
-                let data = nested_py_object_to_hashmap(data)?;
-                match data.get(primary_key_field) {
-                    None => Err(py_key_error!(
-                        primary_key_field,
-                        "primary key field not found in model"
-                    )),
-                    Some(id) => {
-                        let key = generate_hash_key(model_name, &id.to_string());
-                        Ok(key)
-                    }
-                }
-            }
-            FieldType::Bool => {
-                let v = data.to_string().to_lowercase();
-                Ok(v)
-            }
-            _ => Ok(data.to_string()),
-        }
-    }
-
     /// Converts data got from redis into a FieldType.
     /// This is useful when getting data from redis to return it in python
     pub(crate) fn redis_to_py(&self, data: &redis::Value) -> PyResult<Py<PyAny>> {
@@ -369,122 +333,4 @@ impl FieldType {
             Ok(Self::Str)
         }
     }
-}
-
-impl Record {
-    /// Generates the key-value pairs for this instance to be inserted into redis.
-    pub(crate) fn to_redis_key_value_pairs(
-        &self,
-        schema: &Schema,
-    ) -> PyResult<Vec<(String, String)>> {
-        let data = self.extract_data();
-
-        data.iter()
-            .map(|(k, v)| {
-                let key = k.clone();
-                let value = match schema.get_type(&key) {
-                    None => Err(py_key_error!(
-                        &key,
-                        format!(
-                            "missing key in schema: {:?}, for record: {:?}",
-                            schema, self
-                        )
-                    )),
-                    Some(type_) => type_.py_to_str(v),
-                }?;
-                Ok((key, value))
-            })
-            .collect()
-    }
-
-    /// Generates a primary key basing on the model name and the primary key field.
-    /// This is used when inserting the record into redis
-    pub(crate) fn generate_primary_key(
-        &self,
-        model_name: &str,
-        primary_key_field: &str,
-    ) -> PyResult<String> {
-        let data = self.extract_data();
-        match data.get(primary_key_field) {
-            None => Err(py_key_error!(
-                primary_key_field,
-                "primary key field missing on record"
-            )),
-            Some(key) => Ok(utils::generate_hash_key(model_name, &key.to_string())),
-        }
-    }
-
-    /// Extracts the data hidden inside the record
-    fn extract_data(&self) -> &HashMap<String, Py<PyAny>> {
-        match self {
-            Record::Full { data } => data,
-            Record::Partial { data } => data,
-        }
-    }
-
-    /// Extracts any nested records
-    /// It returns tuples of the primary keys and records
-    pub(crate) fn pop_nested_records(
-        record: &Self,
-        schema: &Schema,
-    ) -> PyResult<Vec<(String, Self, Box<Schema>)>> {
-        let data = record.extract_data();
-        let mut result: Vec<(String, Self, Box<Schema>)> = vec![];
-
-        for (k, v) in &schema.mapping {
-            if let FieldType::Nested {
-                primary_key_field,
-                model_name,
-                schema,
-                ..
-            } = v
-            {
-                if let Some(obj) = data.get(k) {
-                    let nested_data = nested_py_object_to_hashmap(obj)?;
-                    match nested_data.get(primary_key_field) {
-                        None => {
-                            return Err(py_key_error!(
-                                primary_key_field,
-                                "primary key missing in in nested model"
-                            ))
-                        }
-                        Some(pk) => {
-                            let pk = pk.to_string();
-                            result.push((
-                                utils::generate_hash_key(model_name, &pk),
-                                Self::Full { data: nested_data },
-                                schema.clone(),
-                            ));
-                        }
-                    };
-                }
-            }
-        }
-
-        return Ok(result);
-    }
-
-    /// Creates a Record (Full) instance from a python object
-    pub(crate) fn from_py_object(obj: &Py<PyAny>) -> PyResult<Self> {
-        let data: HashMap<String, Py<PyAny>> =
-            Python::with_gil(|py| obj.getattr(py, "dict")?.call0(py)?.extract(py))?;
-        return Ok(Self::Full { data });
-    }
-
-    /// Creates a Record (Half) instance from a python dictionary
-    pub(crate) fn from_py_dict(obj: &Py<PyAny>) -> PyResult<Self> {
-        let data: HashMap<String, Py<PyAny>> = Python::with_gil(|py| obj.extract(py))?;
-        return Ok(Self::Partial { data });
-    }
-}
-
-/// Converts a python nested object into a hashmap
-fn nested_py_object_to_hashmap(obj: &Py<PyAny>) -> PyResult<HashMap<String, Py<PyAny>>> {
-    Python::with_gil(|py| -> PyResult<HashMap<String, Py<PyAny>>> {
-        let v = match obj.extract::<HashMap<String, Py<PyAny>>>(py) {
-            Ok(v) => v,
-            Err(_) => obj.getattr(py, "dict")?.call0(py)?.extract(py)?,
-        };
-        Ok(v)
-    })
 }

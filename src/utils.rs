@@ -5,8 +5,8 @@ use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDate};
 
+use crate::field_types::FieldType;
 use crate::parsers::redis_to_py;
-use crate::records::Record;
 use crate::schema::Schema;
 use crate::store::CollectionMeta;
 
@@ -30,7 +30,7 @@ macro_rules! py_key_error {
 /// Inserts the (primary key, record) tuples passed to it in a batch into the redis store
 pub(crate) fn insert_records(
     pool: &r2d2::Pool<redis::Client>,
-    records: &Vec<(String, Record, Box<Schema>)>,
+    records: &Vec<(String, Vec<(String, String)>)>,
     ttl: &Option<u64>,
 ) -> PyResult<()> {
     let mut conn = pool
@@ -40,9 +40,8 @@ pub(crate) fn insert_records(
 
     // start transaction
     pipe.cmd("MULTI");
-    for (pk, record, schema) in records {
-        let key_value_pairs = record.to_redis_key_value_pairs(schema)?;
-        pipe.hset_multiple(pk, &key_value_pairs);
+    for (pk, record) in records {
+        pipe.hset_multiple(pk, &record);
 
         if let Some(life_span) = ttl {
             pipe.expire(pk, *life_span as usize);
@@ -231,22 +230,69 @@ where
     Ok(list_of_results)
 }
 
-/// Prepares the records for inserting
+/// Prepares the records for inserting. It may receive a model instance or a dictionary
 pub(crate) fn prepare_record_to_insert(
     collection_name: &str,
-    meta: &CollectionMeta,
-    parent_record: Record,
+    schema: &Box<Schema>,
+    obj: &Py<PyAny>,
+    primary_key_field: &str,
     id: Option<&str>,
-) -> PyResult<Vec<(String, Record, Box<Schema>)>> {
-    let mut records: Vec<(String, Record, Box<Schema>)> = Vec::with_capacity(2);
+) -> PyResult<Vec<(String, Vec<(String, String)>)>> {
+    let obj = Python::with_gil(|py| match obj.extract::<HashMap<String, Py<PyAny>>>(py) {
+        Ok(v) => Ok(v),
+        Err(_) => obj.getattr(py, "dict")?.call0(py)?.extract(py),
+    })?;
+
+    let mut results: Vec<(String, Vec<(String, String)>)> = Vec::with_capacity(2);
+    let mut parent_record: Vec<(String, String)> = Vec::with_capacity(obj.len());
+
+    for (field, type_) in &schema.mapping {
+        if let FieldType::Nested {
+            model_name,
+            primary_key_field: nested_pk_field,
+            schema: nested_schema,
+            ..
+        } = type_
+        {
+            if let Some(obj) = obj.get(field) {
+                let mut data = prepare_record_to_insert(
+                    &model_name,
+                    &nested_schema,
+                    obj,
+                    &nested_pk_field,
+                    None,
+                )?;
+                if let Some((k, _)) = data.last() {
+                    parent_record.push((field.clone(), k.clone()));
+                    results.append(&mut data);
+                }
+            }
+        } else {
+            if let Some(v) = obj.get(field) {
+                let mut value = v.to_string();
+                if let FieldType::Bool = type_ {
+                    value = value.to_lowercase()
+                }
+                parent_record.push((field.clone(), value));
+            }
+        }
+    }
+
     let primary_key = match id {
-        None => parent_record.generate_primary_key(collection_name, &meta.primary_key_field)?,
+        None => {
+            let pk = obj.get(primary_key_field).ok_or_else(|| {
+                py_key_error!(
+                    primary_key_field,
+                    format!("primary key field missing in {:?}", obj)
+                )
+            })?;
+            generate_hash_key(collection_name, &pk.to_string())
+        }
         Some(id) => generate_hash_key(collection_name, id),
     };
-    let mut nested_records = Record::pop_nested_records(&parent_record, &meta.schema)?;
-    records.append(&mut nested_records);
-    records.push((primary_key, parent_record, meta.schema.clone()));
-    Ok(records)
+
+    results.push((primary_key, parent_record));
+    Ok(results)
 }
 
 /// Constructs a unique key for saving a hashmap such that it can be distinguished from

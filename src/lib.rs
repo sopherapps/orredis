@@ -2,8 +2,8 @@ use pyo3::prelude::*;
 
 use store::{Collection, Store};
 
+mod field_types;
 mod parsers;
-mod records;
 mod schema;
 pub mod store;
 mod utils;
