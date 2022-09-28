@@ -1,6 +1,6 @@
 # orredis
 
-A fast ORM for redis supporting both asynchronous and synchronous interaction with pooled or single connections to
+A fast ORM for redis supporting interaction with pooled connections to
 redis.
 
 ## Purpose
