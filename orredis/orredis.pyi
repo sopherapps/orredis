@@ -65,7 +65,7 @@ class Collection:
         :return: the list of model objects in this collection
         """
 
-    def get_one_partially(self, id: str, fields: List[str]) -> Model:
+    def get_one_partially(self, id: str, fields: List[str]) -> Dict[str, Any]:
         """
         Retrieves a dictionary containing the provided fields from the record of the given id
 
@@ -74,7 +74,7 @@ class Collection:
         :return: the dict with the given fields as keys and the values got from the record of the given id
         """
 
-    def get_many_partially(self, ids: List[str], fields: List[str]) -> List[Model]:
+    def get_many_partially(self, ids: List[str], fields: List[str]) -> List[Dict[str, Any]]:
         """
         Retrieves a list of dictionaries for records of the given ids,
         only returning the specified fields for each record
@@ -85,7 +85,7 @@ class Collection:
                non-existent ids are ignored
         """
 
-    def get_all_partially(self, fields: List[str]) -> List[Model]:
+    def get_all_partially(self, fields: List[str]) -> List[Dict[str, Any]]:
         """
         Retrieves a list of dictionaries for all records in the store,
         only returning the specified fields for each record
