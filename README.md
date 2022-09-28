@@ -280,7 +280,7 @@ First thing is you probably need to know a bit of rust. Consider reading
 the [rust book](https://doc.rust-lang.org/book/).
 It can be a very interesting read, albeit a long one.
 
-When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTIONS_GUIDELINE.md)
+When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTING.md)
 
 Then you can read through the [SYSTEM DESIGN](./docs/SYSTEM_DESIGN.md) document to get a feel of what exactly is going
 on under the hood.
