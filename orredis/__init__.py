@@ -1,8 +1,8 @@
 from orredis.orredis import Store
 
-from .abstract import BaseModel
+from .abstract import Model
 
 __all__ = [
     Store,
-    BaseModel,
+    Model,
 ]

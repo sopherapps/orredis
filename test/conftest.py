@@ -6,24 +6,21 @@ import pytest
 import redislite
 from pytest_lazyfixture import lazy_fixture
 
-from orredis import Store, BaseModel
+from orredis import Store, Model
 
 
-class Author(BaseModel):
-    _primary_key_field: str = 'name'
+class Author(Model):
     name: str
     active_years: Tuple[int, int]
 
 
-class Book(BaseModel):
-    _primary_key_field: str = 'title'
+class Book(Model):
     title: str
     author: Author
     rating: float
     published_on: date
     tags: List[str] = []
     in_stock: bool = True
-
 
 authors = {
     "charles": Author(name="Charles Dickens", active_years=(1220, 1280)),
@@ -42,12 +39,13 @@ books = [
 ]
 
 redis_store_fixture = [(lazy_fixture("redis_store"))]
-books_fixture = [(lazy_fixture("redis_store"), book) for book in books[-1:]]
+book_collection_fixture = [(lazy_fixture("book_collection"))]
+books_fixture = [(lazy_fixture("book_collection"), book) for book in books[-1:]]
 update_books_fixture = [
-    (lazy_fixture("redis_store"), book.title, {"author": authors["jane"], "in_stock": not book.in_stock})
+    (lazy_fixture("book_collection"), book.title, {"author": authors["jane"], "in_stock": not book.in_stock})
     for book in books[-1:]
 ]
-delete_books_fixture = [(lazy_fixture("redis_store"), book.title) for book in books[-1:]]
+delete_books_fixture = [(lazy_fixture("book_collection"), book.title) for book in books[-1:]]
 
 
 @pytest.fixture()
@@ -72,7 +70,19 @@ def redis_server(unused_tcp_port):
 def redis_store(redis_server):
     """Sets up a redis store using the redis_server fixture and adds the book model to it"""
     store = Store(url=f"redis://localhost:{redis_server}/1")
-    store.register_model(Book)
-    store.register_model(Author)
+    store.create_collection(Author, primary_key_field="name")
+    store.create_collection(Book, primary_key_field="title")
     yield store
     store.clear()
+
+
+@pytest.fixture()
+def book_collection(redis_store):
+    """Returns a collection for manipulating book records"""
+    yield redis_store.get_collection(Book)
+
+
+@pytest.fixture()
+def author_collection(redis_store):
+    """Returns a collection for manipulating author records"""
+    yield redis_store.get_collection(Author)

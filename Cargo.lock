@@ -199,6 +199,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "pyo3",
+ "r2d2",
  "redis",
 ]
 
@@ -309,6 +310,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "r2d2"
+version = "0.8.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51de85fb3fb6524929c8a2eb85e6b6d363de4e8c48f9e2c2eac4944abc181c93"
+dependencies = [
+ "log",
+ "parking_lot",
+ "scheduled-thread-pool",
+]
+
+[[package]]
 name = "redis"
 version = "0.21.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -318,6 +330,7 @@ dependencies = [
  "combine",
  "itoa",
  "percent-encoding",
+ "r2d2",
  "ryu",
  "sha1",
  "url",
@@ -337,6 +350,15 @@ name = "ryu"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4501abdff3ae82a1c1b477a17252eb69cee9e66eb915c1abaa4f44d873df9f09"
+
+[[package]]
+name = "scheduled-thread-pool"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "977a7519bff143a44f842fd07e80ad1329295bd71686457f18e496736f4bf9bf"
+dependencies = [
+ "parking_lot",
+]
 
 [[package]]
 name = "scopeguard"
