@@ -336,6 +336,10 @@ on under the hood.
   pytest test/test_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short 
   ```
 
+## License
+
+Copyright (c) 2022 [Martin Ahindura](https://github.com/tinitto). Licensed under the [MIT License](./LICENSE)
+
 ## Gratitude
 
 To God.
