@@ -57,7 +57,7 @@ async def test_nested_add_many_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_add_one_async(store):
+async def test_add_one_async(store):
     """
     add_one inserts a single record into redis
     """
@@ -93,7 +93,7 @@ async def test_nested_add_one_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_all_async(store):
+async def test_get_all_async(store):
     """get_all() returns all the book models"""
     book_collection = store.get_collection(Book)
     await book_collection.add_many(books)
@@ -105,7 +105,7 @@ def test_get_all_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_all_partially_async(store):
+async def test_get_all_partially_async(store):
     """
     get_all_partially() returns a list of dictionaries of all books models with only those columns
     """
@@ -132,7 +132,7 @@ def test_get_all_partially_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_many_partially_async(store):
+async def test_get_many_partially_async(store):
     """
     get_many_partially() returns a list of dictionaries of book models of the selected ids
     with only those fields
@@ -163,7 +163,7 @@ def test_get_many_partially_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_many_async(store):
+async def test_get_many_async(store):
     """
     get_many() returns only those elements with the given ids
     """
@@ -176,7 +176,7 @@ def test_get_many_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_one_non_existent_id_async(store):
+async def test_get_one_non_existent_id_async(store):
     """
     get_one() for a non-existent id returns None
     """
@@ -190,7 +190,7 @@ def test_get_one_non_existent_id_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_one_partially_non_existent_id_with_existent_columns_async(store):
+async def test_get_one_partially_non_existent_id_with_existent_columns_async(store):
     """
     get_one_partially() for a non-existent id even when columns are okay returns None
     """
@@ -202,7 +202,7 @@ def test_get_one_partially_non_existent_id_with_existent_columns_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_one_async(store):
+async def test_get_one_async(store):
     """
     get_one() returns only the elements with the given id
     """
@@ -215,7 +215,7 @@ def test_get_one_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_get_one_partially_async(store):
+async def test_get_one_partially_async(store):
     """
     get_one_partially() returns only the fields given for the elements with the given id
     """
@@ -231,7 +231,7 @@ def test_get_one_partially_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_update_one_async(store):
+async def test_update_one_async(store):
     """
     update_one() for a given primary key updates it in redis
     """
@@ -260,7 +260,7 @@ def test_update_one_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_nested_update_one_async(store):
+async def test_nested_update_one_async(store):
     """
     Updating a nested model, without changing its primary key, also updates it its collection in redis
     """
@@ -294,7 +294,7 @@ def test_nested_update_one_async(store):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("store", async_redis_store_fixture)
-def test_delete_many_async(store):
+async def test_delete_many_async(store):
     """
     delete_many() removes the items of the given ids from redis,
     but leaves the nested models intact

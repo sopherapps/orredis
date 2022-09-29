@@ -3,6 +3,7 @@ from datetime import date, datetime, timezone
 from typing import Tuple, List
 
 import pytest
+import pytest_asyncio
 import redislite
 from pytest_lazyfixture import lazy_fixture
 
@@ -87,14 +88,14 @@ def redis_store(redis_server):
     store.clear()
 
 
-@pytest.fixture()
-def async_redis_store(redis_server):
+@pytest_asyncio.fixture
+async def async_redis_store(redis_server):
     """Sets up an asynchronous redis store using the redis_server fixture and adds the book model to it"""
     store = AsyncStore(url=f"redis://localhost:{redis_server}/1")
     store.create_collection(Author, primary_key_field="name")
     store.create_collection(Book, primary_key_field="title")
     yield store
-    store.clear()
+    await store.clear()
 
 
 @pytest.fixture()
@@ -109,10 +110,10 @@ def author_collection(redis_store):
     yield redis_store.get_collection(Author)
 
 
-@pytest.fixture()
+@pytest_asyncio.fixture
 def async_book_collection(async_redis_store):
     """Returns an asynchronous collection for manipulating book records"""
-    yield redis_store.get_async_collection(Book)
+    yield async_redis_store.get_collection(Book)
 
 
 @pytest.fixture()
