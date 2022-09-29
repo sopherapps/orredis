@@ -75,3 +75,4 @@ docs/_build/
 
 # just a file for manual testing
 sample.py
+async_sample.py

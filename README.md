@@ -1,7 +1,7 @@
 # orredis
 
-A fast ORM for redis supporting interaction with pooled connections to
-redis.
+A fast ORM for redis supporting synchronous and asynchronous interaction with pooled connections to
+redis. It is written in rust but runs in python v3.7+
 
 ## Purpose
 
@@ -110,7 +110,7 @@ That is the purpose of this project.
 - redis server (yes, you need have a redis server somewhere)
 - [pydantic](https://github.com/samuelcolvin/pydantic/)
 
-## Quick Start
+## Quick Start (Synchronous API)
 
 - Install the package
 
@@ -226,6 +226,131 @@ author_collection.get_one("Jane Austen")
 
 # Delete any number of items
 library_collection.delete_many(ids=["The Grand Library"])
+```
+
+## Quick Start (Asynchronous API)
+
+- Install the package
+
+  ```bash
+  pip install orredis
+  ```
+
+- Import the `AsyncStore` and the `Model` classes and use accordingly
+
+```python
+import asyncio
+from datetime import date
+from typing import Tuple, List
+from orredis import Model, AsyncStore
+
+
+# type annotations are the schema.
+# Don't leave them out or you will just be getting strings for every property when you retrieve an object
+class Author(Model):
+  name: str
+  active_years: Tuple[int, int]
+
+
+class Book(Model):
+  title: str
+  author: Author
+  rating: float
+  published_on: date
+  tags: List[str] = []
+  in_stock: bool = True
+
+
+class Library(Model):
+  name: str
+  address: str
+
+
+# Create the store and add create a collection for each model
+# - `default_ttl` is the default time to live for each record is the store.
+#   records never expire if there is no default_ttl set, and no `ttl` is given when adding that record to the store
+# - `timeout` is the number of milliseconds beyond which the connection to redis will raise a timeout error if
+#   it fails to establish a connection.
+store = AsyncStore(url="redis://localhost:6379/0", pool_size=5, default_ttl=3000, timeout=1000)
+# - `identifier_fields` are the properties on the model that uniquely identify a single record. They form an id.
+store.create_collection(model=Author, primary_key_field="name")
+store.create_collection(model=Book, primary_key_field="title")
+store.create_collection(model=Library, primary_key_field="name")
+
+# sample authors. You can create as many as you wish anywhere in the code
+
+authors = {
+  "charles": Author(name="Charles Dickens", active_years=(1220, 1280)),
+  "jane": Author(name="Jane Austen", active_years=(1580, 1640)),
+}
+
+# Sample books.
+books = [
+  Book(title="Oliver Twist", author=authors["charles"], published_on=date(year=1215, month=4, day=4),
+       in_stock=False, rating=2, tags=["Classic"]),
+  Book(title="Great Expectations", author=authors["charles"], published_on=date(year=1220, month=4, day=4),
+       rating=5,
+       tags=["Classic"]),
+  Book(title="Jane Eyre", author=authors["charles"], published_on=date(year=1225, month=6, day=4), in_stock=False,
+       rating=3.4, tags=["Classic", "Romance"]),
+  Book(title="Wuthering Heights", author=authors["jane"], published_on=date(year=1600, month=4, day=4),
+       rating=4.0,
+       tags=["Classic", "Romance"]),
+]
+
+# Some library objects
+libraries = [
+  Library(name="The Grand Library", address="Kinogozi, Hoima, Uganda"),
+  Library(name="Christian Library", address="Buhimba, Hoima, Uganda")
+]
+
+
+async def run_async_example():
+  # Get the collections
+  book_collection = store.get_collection(
+    model=Book)  # you can have as many instances of this collection as you wish to have
+  library_collection = store.get_collection(model=Library)
+  author_collection = store.get_collection(model=Author)
+
+  # insert the data
+  await book_collection.add_many(books)  # (the associated authors will be automatically inserted)
+  await library_collection.add_many(libraries,
+                                    ttl=3000)  # you can even specify the ttl for only these libraries when adding them
+
+  # Get all books
+  all_books = await book_collection.get_all()
+  print(
+    all_books)  # Will print [Book(title="Oliver Twist", author="Charles Dickens", published_on=date(year=1215, month=4, day=4), in_stock=False), Book(...]
+
+  # Or get some books
+  some_books = await book_collection.get_many(ids=["Oliver Twist", "Jane Eyre"])
+  print(some_books)  # Will print only those two books
+
+  # Or select some authors
+  some_authors = await author_collection.get_many(ids=["Jane Austen"])
+  print(
+    some_authors)  # Will print Jane Austen even though you didn't explicitly insert her in the Author's collection
+
+  # Or only get a few some properties of the book. THIS RETURNS DICTIONARIES not MODEL Instances
+  books_with_few_fields = await book_collection.get_all_partially(fields=["author", "in_stock"])
+  print(books_with_few_fields)  # Will print [{"author": "'Charles Dickens", "in_stock": "True"},...]
+  # there is also get_one_partially, get_many_partially
+
+  # Update any book or library
+  await book_collection.update_one("Oliver Twist", data={"author": authors["jane"]})
+  # You could even update a given author's details by nesting their new data in a book update
+  updated_jane = authors["jane"].with_changes(
+    {"active_years": (1999, 2008)})  # create a new record from an old one, with only a few changes
+  await book_collection.update_one("Oliver Twist", data={"author": updated_jane})
+  # Trying to retrieve jane directly will return her with the new details
+  # All other books that have Jane Austen as author will also have their data updated. (like a real relationship)
+  await author_collection.get_one("Jane Austen")
+
+  # Delete any number of items
+  await library_collection.delete_many(ids=["The Grand Library"])
+
+
+asyncio.run(run_async_example())
 ```
 
 ## Benchmarks
