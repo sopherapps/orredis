@@ -1,6 +1,6 @@
 # orredis
 
-A fast ORM for redis supporting synchronous and asynchronous interaction with pooled connections to
+A fast pydantic-based ORM for redis supporting synchronous and asynchronous interaction with pooled connections to
 redis. It is written in rust but runs in python v3.7+
 
 ## Purpose
