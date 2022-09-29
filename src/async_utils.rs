@@ -1,14 +1,11 @@
 use std::collections::HashMap;
-use std::ops::DerefMut;
 
 use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{timezone_utc, IntoPyDict, PyDate, PyDateTime};
+use pyo3::types::IntoPyDict;
 use redis::aio::Connection;
 
-use crate::field_types::FieldType;
 use crate::parsers::redis_to_py;
-use crate::schema::Schema;
 use crate::store::CollectionMeta;
 use crate::{mobc_redis, utils};
 

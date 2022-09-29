@@ -2,19 +2,19 @@
 //! I had to get some of the methods because it was conflicting with the pyo3 version of this project
 //! But all the code is copied as is from [pyo3-asyncio version 1.16.0](https://docs.rs/pyo3-asyncio/)
 
-pub mod async_std;
-
-/// Errors and exceptions related to PyO3 Asyncio
-pub mod err;
-
-pub mod generic;
-
 use futures::channel::oneshot;
 use once_cell::sync::OnceCell;
 use pyo3::{
     prelude::*,
     types::{PyDict, PyTuple},
 };
+
+pub mod async_std;
+
+/// Errors and exceptions related to PyO3 Asyncio
+pub mod err;
+
+pub mod generic;
 
 static ASYNCIO: OnceCell<PyObject> = OnceCell::new();
 static CONTEXTVARS: OnceCell<PyObject> = OnceCell::new();
@@ -71,8 +71,6 @@ fn copy_context(py: Python) -> PyResult<&PyAny> {
 pub struct TaskLocals {
     /// Track the event loop of the Python task
     event_loop: PyObject,
-    /// Track the contextvars of the Python task
-    context: PyObject,
 }
 
 impl TaskLocals {
@@ -80,7 +78,6 @@ impl TaskLocals {
     pub fn new(event_loop: &PyAny) -> Self {
         Self {
             event_loop: event_loop.into(),
-            context: event_loop.py().None(),
         }
     }
 
@@ -90,11 +87,8 @@ impl TaskLocals {
     }
 
     /// Manually provide the contextvars for the current task.
-    pub fn with_context(self, context: &PyAny) -> Self {
-        Self {
-            context: context.into(),
-            ..self
-        }
+    pub fn with_context(self, _context: &PyAny) -> Self {
+        Self { ..self }
     }
 
     /// Capture the current task's contextvars
@@ -105,11 +99,6 @@ impl TaskLocals {
     /// Get a reference to the event loop
     pub fn event_loop<'p>(&self, py: Python<'p>) -> &'p PyAny {
         self.event_loop.clone().into_ref(py)
-    }
-
-    /// Get a reference to the python context
-    pub fn context<'p>(&self, py: Python<'p>) -> &'p PyAny {
-        self.context.clone().into_ref(py)
     }
 }
 
