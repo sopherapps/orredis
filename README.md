@@ -285,6 +285,12 @@ When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTING.m
 Then you can read through the [SYSTEM DESIGN](./docs/SYSTEM_DESIGN.md) document to get a feel of what exactly is going
 on under the hood.
 
+### TODO:
+
+- [ ] Add pagination for `collection.get_all()` and `collection.get_all_partially()`
+- [ ] Add an asynchronous API with same exact data manipulation and querying methods
+- [ ] Add and host proper documentation
+
 ### How to Test
 
 
