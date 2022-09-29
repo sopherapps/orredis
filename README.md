@@ -1,7 +1,7 @@
 # orredis
 
-A fast ORM for redis supporting interaction with pooled connections to
-redis.
+A fast ORM for redis supporting synchronous and asynchronous interaction with pooled connections to
+redis. It is written in rust but runs in python v3.7+
 
 ## Purpose
 
@@ -110,7 +110,7 @@ That is the purpose of this project.
 - redis server (yes, you need have a redis server somewhere)
 - [pydantic](https://github.com/samuelcolvin/pydantic/)
 
-## Quick Start
+## Quick Start (Synchronous API)
 
 - Install the package
 
@@ -228,12 +228,158 @@ author_collection.get_one("Jane Austen")
 library_collection.delete_many(ids=["The Grand Library"])
 ```
 
+## Quick Start (Asynchronous API)
+
+- Install the package
+
+  ```bash
+  pip install orredis
+  ```
+
+- Import the `AsyncStore` and the `Model` classes and use accordingly
+
+```python
+import asyncio
+from datetime import date
+from typing import Tuple, List
+from orredis import Model, AsyncStore
+
+
+# type annotations are the schema.
+# Don't leave them out or you will just be getting strings for every property when you retrieve an object
+class Author(Model):
+  name: str
+  active_years: Tuple[int, int]
+
+
+class Book(Model):
+  title: str
+  author: Author
+  rating: float
+  published_on: date
+  tags: List[str] = []
+  in_stock: bool = True
+
+
+class Library(Model):
+  name: str
+  address: str
+
+
+# Create the store and add create a collection for each model
+# - `default_ttl` is the default time to live for each record is the store.
+#   records never expire if there is no default_ttl set, and no `ttl` is given when adding that record to the store
+# - `timeout` is the number of milliseconds beyond which the connection to redis will raise a timeout error if
+#   it fails to establish a connection.
+store = AsyncStore(url="redis://localhost:6379/0", pool_size=5, default_ttl=3000, timeout=1000)
+# - `identifier_fields` are the properties on the model that uniquely identify a single record. They form an id.
+store.create_collection(model=Author, primary_key_field="name")
+store.create_collection(model=Book, primary_key_field="title")
+store.create_collection(model=Library, primary_key_field="name")
+
+# sample authors. You can create as many as you wish anywhere in the code
+
+authors = {
+  "charles": Author(name="Charles Dickens", active_years=(1220, 1280)),
+  "jane": Author(name="Jane Austen", active_years=(1580, 1640)),
+}
+
+# Sample books.
+books = [
+  Book(title="Oliver Twist", author=authors["charles"], published_on=date(year=1215, month=4, day=4),
+       in_stock=False, rating=2, tags=["Classic"]),
+  Book(title="Great Expectations", author=authors["charles"], published_on=date(year=1220, month=4, day=4),
+       rating=5,
+       tags=["Classic"]),
+  Book(title="Jane Eyre", author=authors["charles"], published_on=date(year=1225, month=6, day=4), in_stock=False,
+       rating=3.4, tags=["Classic", "Romance"]),
+  Book(title="Wuthering Heights", author=authors["jane"], published_on=date(year=1600, month=4, day=4),
+       rating=4.0,
+       tags=["Classic", "Romance"]),
+]
+
+# Some library objects
+libraries = [
+  Library(name="The Grand Library", address="Kinogozi, Hoima, Uganda"),
+  Library(name="Christian Library", address="Buhimba, Hoima, Uganda")
+]
+
+
+async def run_async_example():
+  # Get the collections
+  book_collection = store.get_collection(
+    model=Book)  # you can have as many instances of this collection as you wish to have
+  library_collection = store.get_collection(model=Library)
+  author_collection = store.get_collection(model=Author)
+
+  # insert the data
+  await book_collection.add_many(books)  # (the associated authors will be automatically inserted)
+  await library_collection.add_many(libraries,
+                                    ttl=3000)  # you can even specify the ttl for only these libraries when adding them
+
+  # Get all books
+  all_books = await book_collection.get_all()
+  print(
+    all_books)  # Will print [Book(title="Oliver Twist", author="Charles Dickens", published_on=date(year=1215, month=4, day=4), in_stock=False), Book(...]
+
+  # Or get some books
+  some_books = await book_collection.get_many(ids=["Oliver Twist", "Jane Eyre"])
+  print(some_books)  # Will print only those two books
+
+  # Or select some authors
+  some_authors = await author_collection.get_many(ids=["Jane Austen"])
+  print(
+    some_authors)  # Will print Jane Austen even though you didn't explicitly insert her in the Author's collection
+
+  # Or only get a few some properties of the book. THIS RETURNS DICTIONARIES not MODEL Instances
+  books_with_few_fields = await book_collection.get_all_partially(fields=["author", "in_stock"])
+  print(books_with_few_fields)  # Will print [{"author": "'Charles Dickens", "in_stock": "True"},...]
+  # there is also get_one_partially, get_many_partially
+
+  # Update any book or library
+  await book_collection.update_one("Oliver Twist", data={"author": authors["jane"]})
+  # You could even update a given author's details by nesting their new data in a book update
+  updated_jane = authors["jane"].with_changes(
+    {"active_years": (1999, 2008)})  # create a new record from an old one, with only a few changes
+  await book_collection.update_one("Oliver Twist", data={"author": updated_jane})
+  # Trying to retrieve jane directly will return her with the new details
+  # All other books that have Jane Austen as author will also have their data updated. (like a real relationship)
+  await author_collection.get_one("Jane Austen")
+
+  # Delete any number of items
+  await library_collection.delete_many(ids=["The Grand Library"])
+
+
+asyncio.run(run_async_example())
+```
+
 ## Benchmarks
 
 This package has been benchmarked against some of the pre-existing ORMs for redis and this is how it stacks up against
 them:
 
-### orredis (optimized)
+### orredis (asynchronous)
+
+```
+---------------------------------------------------------- benchmark: 11 tests ----------------------------------------------------------
+Name (time in us)                                                                Mean                Min                    Max          
+-----------------------------------------------------------------------------------------------------------------------------------------
+benchmark_async_delete[async_book_collection-Wuthering Heights]               21.3601 (1.66)      6.1050 (1.0)      19,299.5530 (17.09)  
+benchmark_async_add_one[async_book_collection-book0]                          12.8834 (1.0)       6.1730 (1.01)      1,281.1460 (1.13)   
+benchmark_async_update_one[async_book_collection-Wuthering Heights-data0]     13.8155 (1.07)      6.3400 (1.04)     15,867.4010 (14.05)  
+benchmark_async_add_many[async_book_collection]                               17.5144 (1.36)      7.1700 (1.17)      1,129.5450 (1.0)    
+benchmark_async_bulk_delete[async_book_collection]                            25.1278 (1.95)      7.1840 (1.18)     23,385.2130 (20.70)  
+benchmark_async_get_all[async_book_collection]                                23.2657 (1.81)      8.2150 (1.35)      3,417.0570 (3.03)   
+benchmark_async_get_one[async_book_collection-book0]                          22.6506 (1.76)      8.2610 (1.35)      1,202.5950 (1.06)   
+benchmark_async_get_many_partially[async_book_collection]                     25.1589 (1.95)     10.7620 (1.76)      1,369.5500 (1.21)   
+benchmark_async_get_one_partially[async_book_collection-book0]                25.0272 (1.94)     11.4470 (1.88)     15,109.6220 (13.38)  
+benchmark_async_get_many[async_book_collection]                               24.9438 (1.94)     11.6200 (1.90)      2,231.5890 (1.98)   
+benchmark_async_get_all_partially[async_book_collection]                      25.7168 (2.00)     11.8590 (1.94)     17,399.2010 (15.40)  
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+```
+
+### orredis (synchronous)
 
 ``` 
 ----------------------------------------------------- benchmark: 11 tests -----------------------------------------------------
@@ -257,6 +403,9 @@ benchmark_get_all[book_collection]                                398.7546 (5.45
 ### [pydantic-redis (pure-python)](https://github.com/sopherapps/pydantic-redis)
 
 ``` 
+---------------------------------------------------- benchmark: 11 tests --------------------------------------------------
+Name (time in us)                                                Mean                 Min                   Max          
+---------------------------------------------------------------------------------------------------------------------------
 benchmark_delete[redis_store-Wuthering Heights]              166.7813 (1.0)        151.4560 (1.0)        537.9630 (1.0)    
 benchmark_bulk_delete[redis_store]                           197.9722 (1.19)       169.5110 (1.12)       751.8540 (1.40)   
 benchmark_update[redis_store-Wuthering Heights-data0]        372.0253 (2.23)       328.2080 (2.17)     1,825.8930 (3.39)   
@@ -284,6 +433,12 @@ When you are ready, look at the [CONTRIBUTIONS GUIDELINES](./docs/CONTRIBUTING.m
 
 Then you can read through the [SYSTEM DESIGN](./docs/SYSTEM_DESIGN.md) document to get a feel of what exactly is going
 on under the hood.
+
+### TODO:
+
+- [ ] Add pagination for `collection.get_all()` and `collection.get_all_partially()`
+- [x] Add an asynchronous API with same exact data manipulation and querying methods
+- [ ] Add and host proper documentation
 
 ### How to Test
 
@@ -332,8 +487,14 @@ on under the hood.
 
   OR the summary
 
-  ```bash
+  ```shell
+  # synchronous API
   pytest test/test_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short 
+  ```
+
+  ```shell
+  # asynchronous API
+  pytest test/test_async_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short
   ```
 
 ## License

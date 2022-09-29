@@ -1,4 +1,4 @@
-"""Tests for the redis orm"""
+"""Tests for the orredis"""
 from datetime import datetime, timezone, timedelta
 
 import pytest

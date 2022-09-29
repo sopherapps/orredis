@@ -32,14 +32,6 @@ pub(crate) struct CollectionMeta {
     pub(crate) nested_fields: Vec<String>,
 }
 
-#[pyclass(subclass)]
-pub(crate) struct Collection {
-    name: String,
-    meta: CollectionMeta,
-    pool: r2d2::Pool<redis::Client>,
-    default_ttl: Option<u64>,
-}
-
 #[pymethods]
 impl Store {
     /// Initializes the Store
@@ -152,6 +144,31 @@ impl Store {
             )))
         }
     }
+}
+
+impl CollectionMeta {
+    /// Instantiates a new collection meta
+    pub(crate) fn new(
+        schema: Box<Schema>,
+        model_type: Py<PyType>,
+        primary_key_field: String,
+        nested_fields: Vec<String>,
+    ) -> Self {
+        CollectionMeta {
+            schema,
+            model_type,
+            primary_key_field,
+            nested_fields,
+        }
+    }
+}
+
+#[pyclass(subclass)]
+pub(crate) struct Collection {
+    pub(crate) name: String,
+    pub(crate) meta: CollectionMeta,
+    pub(crate) pool: r2d2::Pool<redis::Client>,
+    pub(crate) default_ttl: Option<u64>,
 }
 
 #[pymethods]
@@ -289,23 +306,6 @@ impl Collection {
             meta,
             pool,
             default_ttl,
-        }
-    }
-}
-
-impl CollectionMeta {
-    /// Instantiates a new collection meta
-    pub(crate) fn new(
-        schema: Box<Schema>,
-        model_type: Py<PyType>,
-        primary_key_field: String,
-        nested_fields: Vec<String>,
-    ) -> Self {
-        CollectionMeta {
-            schema,
-            model_type,
-            primary_key_field,
-            nested_fields,
         }
     }
 }
