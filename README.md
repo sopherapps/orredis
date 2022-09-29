@@ -437,7 +437,7 @@ on under the hood.
 ### TODO:
 
 - [ ] Add pagination for `collection.get_all()` and `collection.get_all_partially()`
-- [ ] Add an asynchronous API with same exact data manipulation and querying methods
+- [x] Add an asynchronous API with same exact data manipulation and querying methods
 - [ ] Add and host proper documentation
 
 ### How to Test
