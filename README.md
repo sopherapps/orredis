@@ -358,7 +358,28 @@ asyncio.run(run_async_example())
 This package has been benchmarked against some of the pre-existing ORMs for redis and this is how it stacks up against
 them:
 
-### orredis (optimized)
+### orredis (asynchronous)
+
+```
+---------------------------------------------------------- benchmark: 11 tests ----------------------------------------------------------
+Name (time in us)                                                                Mean                Min                    Max          
+-----------------------------------------------------------------------------------------------------------------------------------------
+benchmark_async_delete[async_book_collection-Wuthering Heights]               21.3601 (1.66)      6.1050 (1.0)      19,299.5530 (17.09)  
+benchmark_async_add_one[async_book_collection-book0]                          12.8834 (1.0)       6.1730 (1.01)      1,281.1460 (1.13)   
+benchmark_async_update_one[async_book_collection-Wuthering Heights-data0]     13.8155 (1.07)      6.3400 (1.04)     15,867.4010 (14.05)  
+benchmark_async_add_many[async_book_collection]                               17.5144 (1.36)      7.1700 (1.17)      1,129.5450 (1.0)    
+benchmark_async_bulk_delete[async_book_collection]                            25.1278 (1.95)      7.1840 (1.18)     23,385.2130 (20.70)  
+benchmark_async_get_all[async_book_collection]                                23.2657 (1.81)      8.2150 (1.35)      3,417.0570 (3.03)   
+benchmark_async_get_one[async_book_collection-book0]                          22.6506 (1.76)      8.2610 (1.35)      1,202.5950 (1.06)   
+benchmark_async_get_many_partially[async_book_collection]                     25.1589 (1.95)     10.7620 (1.76)      1,369.5500 (1.21)   
+benchmark_async_get_one_partially[async_book_collection-book0]                25.0272 (1.94)     11.4470 (1.88)     15,109.6220 (13.38)  
+benchmark_async_get_many[async_book_collection]                               24.9438 (1.94)     11.6200 (1.90)      2,231.5890 (1.98)   
+benchmark_async_get_all_partially[async_book_collection]                      25.7168 (2.00)     11.8590 (1.94)     17,399.2010 (15.40)  
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+```
+
+### orredis (synchronous)
 
 ``` 
 ----------------------------------------------------- benchmark: 11 tests -----------------------------------------------------
@@ -382,6 +403,9 @@ benchmark_get_all[book_collection]                                398.7546 (5.45
 ### [pydantic-redis (pure-python)](https://github.com/sopherapps/pydantic-redis)
 
 ``` 
+---------------------------------------------------- benchmark: 11 tests --------------------------------------------------
+Name (time in us)                                                Mean                 Min                   Max          
+---------------------------------------------------------------------------------------------------------------------------
 benchmark_delete[redis_store-Wuthering Heights]              166.7813 (1.0)        151.4560 (1.0)        537.9630 (1.0)    
 benchmark_bulk_delete[redis_store]                           197.9722 (1.19)       169.5110 (1.12)       751.8540 (1.40)   
 benchmark_update[redis_store-Wuthering Heights-data0]        372.0253 (2.23)       328.2080 (2.17)     1,825.8930 (3.39)   
@@ -463,8 +487,14 @@ on under the hood.
 
   OR the summary
 
-  ```bash
+  ```shell
+  # synchronous API
   pytest test/test_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short 
+  ```
+
+  ```shell
+  # asynchronous API
+  pytest test/test_async_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short
   ```
 
 ## License
