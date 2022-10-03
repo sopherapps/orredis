@@ -25,9 +25,10 @@ requests:
 5. Make sure your code lints.
 6. Issue that pull request!
 
-## Any contributions you make will be under the MIT Software License
+## Any contributions you make will be under the MIT and APACHE 2.0 Software Licenses
 
-In short, when you submit code changes, your submissions are understood to be under the same [MIT License](../LICENSE)
+In short, when you submit code changes, your submissions are understood to be under the
+same [MIT License](../LICENSE-MIT) and [APACHE (2.0) License](../LICENSE-APACHE)
 that covers the project. Feel free to contact the maintainers if that's a concern.
 
 ## Report bugs using Github's [issues](https://github.com/sopherapps/orredis/issues)

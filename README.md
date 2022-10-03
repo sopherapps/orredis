@@ -497,9 +497,16 @@ on under the hood.
   pytest test/test_async_benchmarks.py --benchmark-columns=mean,min,max --benchmark-name=short
   ```
 
+## Acknowledgement
+
+- The asyncio module code was adapted from [pyo3-asyncio](https://github.com/awestlake87/pyo3-asyncio)
+- The python-rust bindings were got from [the pyo3 project](https://github.com/PyO3)
+
 ## License
 
-Copyright (c) 2022 [Martin Ahindura](https://github.com/tinitto). Licensed under the [MIT License](./LICENSE)
+Licensed under both the [MIT License](./LICENSE-MIT) and the [APACHE (2.0) License](./LICENSE-APACHE)
+Copyright (c) 2022 [Martin Ahindura](https://github.com/tinitto)
+Copyright (c) 2017-present PyO3 Project and Contributors
 
 ## Gratitude
 
