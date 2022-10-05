@@ -29,7 +29,7 @@ test = [
 ]
 
 [project.urls]
-homepage = "github.com/sopherapps/orredis"
-documentation = "github.com/sopherapps/orredis"
-repository = "github.com/sopherapps/orredis"
+homepage = "https://github.com/sopherapps/orredis"
+documentation = "https://github.com/sopherapps/orredis"
+repository = "https://github.com/sopherapps/orredis"
 changelog = "https://github.com/sopherapps/orredis/blob/master/CHANGELOG.md"
