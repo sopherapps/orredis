@@ -510,4 +510,8 @@ Copyright (c) 2017-present PyO3 Project and Contributors
 
 ## Gratitude
 
-To God.
+> "Jesus answered him(Thomas), 'I am the way, the truth and the life; no one goes to the Father except by Me'"
+> 
+> -- John 14: 6
+
+All glory be to God.
