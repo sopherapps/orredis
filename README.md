@@ -515,3 +515,5 @@ Copyright (c) 2017-present PyO3 Project and Contributors
 > -- John 14: 6
 
 All glory be to God.
+
+<script type="text/javascript" src="https://cdnjs.buymeacoffee.com/1.0.0/button.prod.min.js" data-name="bmc-button" data-slug="martinahinJ" data-color="#FFDD00" data-emoji=""  data-font="Cookie" data-text="Buy me a coffee" data-outline-color="#000000" data-font-color="#000000" data-coffee-color="#ffffff" ></script>
