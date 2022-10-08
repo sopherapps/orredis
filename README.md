@@ -1,5 +1,7 @@
 # orredis
 
+[![PyPI version](https://badge.fury.io/py/orredis.svg)](https://badge.fury.io/py/orredis) ![Github Actions status](https://github.com/sopherapps/orredis/actions/workflows/CI.yml/badge.svg)
+
 A fast pydantic-based ORM for redis supporting synchronous and asynchronous interaction with pooled connections to
 redis. It is written in rust but runs in python v3.7+
 
