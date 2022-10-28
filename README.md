@@ -1,6 +1,6 @@
 # orredis
 
-[![PyPI version](https://badge.fury.io/py/orredis.svg)](https://badge.fury.io/py/orredis) ![Github Actions status](https://github.com/sopherapps/orredis/actions/workflows/CI.yml/badge.svg)
+[![PyPI version](https://badge.fury.io/py/orredis.svg)](https://badge.fury.io/py/orredis) ![CI](https://github.com/sopherapps/orredis/actions/workflows/CI.yml/badge.svg)
 
 A fast pydantic-based ORM for redis supporting synchronous and asynchronous interaction with pooled connections to
 redis. It is written in rust but runs in python v3.7+
@@ -507,13 +507,15 @@ on under the hood.
 ## License
 
 Licensed under both the [MIT License](./LICENSE-MIT) and the [APACHE (2.0) License](./LICENSE-APACHE)
+
 Copyright (c) 2022 [Martin Ahindura](https://github.com/tinitto)
+
 Copyright (c) 2017-present PyO3 Project and Contributors
 
 ## Gratitude
 
 > "Jesus answered him(Thomas), 'I am the way, the truth and the life; no one goes to the Father except by Me'"
-> 
+>
 > -- John 14: 6
 
 All glory be to God.
