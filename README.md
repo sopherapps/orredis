@@ -405,21 +405,30 @@ benchmark_get_all[book_collection]                                398.7546 (5.45
 ### [pydantic-redis (pure-python)](https://github.com/sopherapps/pydantic-redis)
 
 ``` 
----------------------------------------------------- benchmark: 11 tests --------------------------------------------------
-Name (time in us)                                                Mean                 Min                   Max          
----------------------------------------------------------------------------------------------------------------------------
-benchmark_delete[redis_store-Wuthering Heights]              166.7813 (1.0)        151.4560 (1.0)        537.9630 (1.0)    
-benchmark_bulk_delete[redis_store]                           197.9722 (1.19)       169.5110 (1.12)       751.8540 (1.40)   
-benchmark_update[redis_store-Wuthering Heights-data0]        372.0253 (2.23)       328.2080 (2.17)     1,825.8930 (3.39)   
-benchmark_single_insert[redis_store-book0]                   425.9535 (2.55)       389.1270 (2.57)       637.8000 (1.19)   
-benchmark_select_columns_for_one_id[redis_store-book0]       478.0758 (2.87)       440.3790 (2.91)       878.7980 (1.63)   
-benchmark_select_all_for_one_id[redis_store-book0]           544.4497 (3.26)       490.4720 (3.24)     1,346.3720 (2.50)   
-benchmark_select_columns_for_some_items[redis_store]         609.6302 (3.66)       526.4430 (3.48)     3,640.8700 (6.77)   
-benchmark_select_some_items[redis_store]                     726.0504 (4.35)       679.9930 (4.49)     2,105.7010 (3.91)   
-benchmark_select_columns[redis_store]                        919.1155 (5.51)       823.5510 (5.44)     2,066.8600 (3.84)   
-benchmark_bulk_insert[redis_store]                         1,124.5457 (6.74)       995.9630 (6.58)     1,410.6550 (2.62)   
-benchmark_select_default[redis_store]                      1,189.2962 (7.13)     1,067.1630 (7.05)     2,223.7830 (4.13)   
----------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------- benchmark: 20 tests -------------------------------------------------
+Name (time in us)                                              Mean                 Min                   Max          
+-----------------------------------------------------------------------------------------------------------------------
+benchmark_select_columns_for_one_id[redis_store-book1]     143.5316 (1.08)     117.4340 (1.0)        347.5900 (1.0)    
+benchmark_select_columns_for_one_id[redis_store-book3]     151.6032 (1.14)     117.6690 (1.00)       405.4620 (1.17)   
+benchmark_select_columns_for_one_id[redis_store-book0]     133.0856 (1.0)      117.8720 (1.00)       403.9400 (1.16)   
+benchmark_select_columns_for_one_id[redis_store-book2]     156.8152 (1.18)     118.7220 (1.01)       569.9800 (1.64)   
+benchmark_select_columns_for_some_items[redis_store]       138.0488 (1.04)     120.1550 (1.02)       350.7040 (1.01)   
+benchmark_delete[redis_store-Wuthering Heights]            199.9205 (1.50)     127.6990 (1.09)     1,092.2190 (3.14)   
+benchmark_bulk_delete[redis_store]                         178.4756 (1.34)     143.7480 (1.22)       647.6660 (1.86)   
+benchmark_select_all_for_one_id[redis_store-book1]         245.7787 (1.85)     195.2030 (1.66)       528.9250 (1.52)   
+benchmark_select_all_for_one_id[redis_store-book0]         239.1152 (1.80)     199.4360 (1.70)       767.2540 (2.21)   
+benchmark_select_all_for_one_id[redis_store-book3]         243.8724 (1.83)     200.8060 (1.71)       535.3640 (1.54)   
+benchmark_select_all_for_one_id[redis_store-book2]         256.1625 (1.92)     202.4630 (1.72)       701.3000 (2.02)   
+benchmark_update[redis_store-Wuthering Heights-data0]      329.1363 (2.47)     266.9700 (2.27)       742.1360 (2.14)   
+benchmark_select_some_items[redis_store]                   301.0471 (2.26)     268.9410 (2.29)       551.1060 (1.59)   
+benchmark_select_columns[redis_store]                      313.4356 (2.36)     281.4460 (2.40)       578.7730 (1.67)   
+benchmark_single_insert[redis_store-book2]                 348.5624 (2.62)     297.3610 (2.53)       580.8780 (1.67)   
+benchmark_single_insert[redis_store-book1]                 342.1879 (2.57)     297.5410 (2.53)       650.5420 (1.87)   
+benchmark_single_insert[redis_store-book0]                 366.4513 (2.75)     310.1640 (2.64)       660.5380 (1.90)   
+benchmark_single_insert[redis_store-book3]                 377.6208 (2.84)     327.5290 (2.79)       643.4090 (1.85)   
+benchmark_select_default[redis_store]                      486.6931 (3.66)     428.8810 (3.65)     1,181.9620 (3.40)   
+benchmark_bulk_insert[redis_store]                         897.7862 (6.75)     848.7410 (7.23)     1,188.5160 (3.42)   
+-----------------------------------------------------------------------------------------------------------------------
 ```
 
 ## Contributions
