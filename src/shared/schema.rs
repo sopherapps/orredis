@@ -4,7 +4,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyType};
 
-use crate::field_types::FieldType;
+use crate::shared::field_types::FieldType;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Schema {

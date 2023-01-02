@@ -5,10 +5,10 @@ use pyo3::prelude::*;
 use pyo3::types::{IntoPyDict, PyDict, PyList, PyType};
 use redis::Value;
 
-use crate::macros::{py_value_error, to_py};
-use crate::schema::Schema;
-use crate::utils::try_get;
-use crate::{parsers, utils};
+use crate::shared::macros::{py_value_error, to_py};
+use crate::shared::parsers;
+use crate::shared::schema::Schema;
+use crate::shared::utils::try_get;
 
 #[derive(Clone, Debug)]
 pub(crate) enum FieldType {
@@ -80,12 +80,12 @@ impl FieldType {
             FieldType::Datetime => {
                 let v = parsers::redis_to_py::<String>(data)?;
                 let timestamp = parsers::parse_datetime_to_timestamp(&v)?;
-                utils::timestamp_to_py_datetime(timestamp)
+                parsers::timestamp_to_py_datetime(timestamp)
             }
             FieldType::Date => {
                 let v = parsers::redis_to_py::<String>(data)?;
                 let timestamp = parsers::parse_date_to_timestamp(&v)?;
-                utils::timestamp_to_py_date(timestamp)
+                parsers::timestamp_to_py_date(timestamp)
             }
             FieldType::None => Ok(Python::with_gil(|py| py.None())),
         }
@@ -197,11 +197,11 @@ impl FieldType {
             }
             FieldType::Datetime => {
                 let timestamp = parsers::parse_datetime_to_timestamp(data)?;
-                utils::timestamp_to_py_datetime(timestamp)
+                parsers::timestamp_to_py_datetime(timestamp)
             }
             FieldType::Date => {
                 let timestamp = parsers::parse_date_to_timestamp(data)?;
-                utils::timestamp_to_py_date(timestamp)
+                parsers::timestamp_to_py_date(timestamp)
             }
             FieldType::None => Ok(Python::with_gil(|py| py.None())),
         }

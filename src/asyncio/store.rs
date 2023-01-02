@@ -7,13 +7,15 @@ use pyo3::prelude::*;
 use pyo3::types::PyType;
 use redis::aio::Connection;
 
+use crate::asyncio::utils;
 use crate::external::{asyncio, mobc_redis};
-use crate::schema::Schema;
-use crate::{async_utils, store, utils};
+use crate::shared::collections;
+use crate::shared::schema::Schema;
+use crate::shared::utils::{generate_hash_key, prepare_record_to_insert};
 
 #[pyclass(subclass)]
 pub(crate) struct AsyncStore {
-    collections_meta: HashMap<String, store::CollectionMeta>,
+    collections_meta: HashMap<String, collections::CollectionMeta>,
     primary_key_field_map: HashMap<String, String>,
     model_type_map: HashMap<String, Py<PyType>>,
     pool: mobc::Pool<mobc_redis::RedisConnectionManager>,
@@ -110,7 +112,7 @@ impl AsyncStore {
                 Schema::from_py_schema(schema, &self.primary_key_field_map, &self.model_type_map)?;
             let nested_fields = schema.extract_nested_fields();
             let model_name: String = model.getattr(py, "__qualname__")?.extract(py)?;
-            let meta = store::CollectionMeta::new(
+            let meta = collections::CollectionMeta::new(
                 Box::new(schema),
                 model.clone(),
                 primary_key_field.clone(),
@@ -149,7 +151,7 @@ impl AsyncStore {
 #[pyclass(subclass)]
 pub(crate) struct AsyncCollection {
     pub(crate) name: String,
-    pub(crate) meta: store::CollectionMeta,
+    pub(crate) meta: collections::CollectionMeta,
     pub(crate) pool: mobc::Pool<mobc_redis::RedisConnectionManager>,
     pub(crate) default_ttl: Option<u64>,
 }
@@ -175,13 +177,12 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                let records =
-                    utils::prepare_record_to_insert(&name, &schema, &item, &pk_field, None)?;
+                let records = prepare_record_to_insert(&name, &schema, &item, &pk_field, None)?;
                 let ttl = match ttl {
                     None => default_ttl,
                     Some(v) => Some(v),
                 };
-                async_utils::insert_records_async(&pool, &records, &ttl).await
+                utils::insert_records_async(&pool, &records, &ttl).await
             }),
         )
     }
@@ -210,7 +211,7 @@ impl AsyncCollection {
                     Vec::with_capacity(2 * items.len());
                 for item in items {
                     let mut records_to_insert =
-                        utils::prepare_record_to_insert(&name, &schema, &item, &pk_field, None)?;
+                        prepare_record_to_insert(&name, &schema, &item, &pk_field, None)?;
                     records.append(&mut records_to_insert);
                 }
 
@@ -219,7 +220,7 @@ impl AsyncCollection {
                     Some(v) => Some(v),
                 };
 
-                async_utils::insert_records_async(&pool, &records, &ttl).await
+                utils::insert_records_async(&pool, &records, &ttl).await
             }),
         )
     }
@@ -246,14 +247,14 @@ impl AsyncCollection {
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
                 let records =
-                    utils::prepare_record_to_insert(&name, &schema, &data, &pk_field, Some(&id))?;
+                    prepare_record_to_insert(&name, &schema, &data, &pk_field, Some(&id))?;
 
                 let ttl = match ttl {
                     None => default_ttl,
                     Some(v) => Some(v),
                 };
 
-                async_utils::insert_records_async(&pool, &records, &ttl).await
+                utils::insert_records_async(&pool, &records, &ttl).await
             }),
         )
     }
@@ -269,11 +270,9 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                let primary_keys: Vec<String> = ids
-                    .iter()
-                    .map(|id| utils::generate_hash_key(&name, id))
-                    .collect();
-                async_utils::remove_records_async(&pool, &primary_keys).await
+                let primary_keys: Vec<String> =
+                    ids.iter().map(|id| generate_hash_key(&name, id)).collect();
+                utils::remove_records_async(&pool, &primary_keys).await
             }),
         )
     }
@@ -292,7 +291,7 @@ impl AsyncCollection {
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
                 let mut records: Vec<Py<PyAny>> =
-                    async_utils::get_records_by_id_async(&pool, &name, &meta, &vec![id]).await?;
+                    utils::get_records_by_id_async(&pool, &name, &meta, &vec![id]).await?;
                 match records.pop() {
                     None => Python::with_gil(|py| Ok(py.None())),
                     Some(record) => Ok(record),
@@ -313,7 +312,7 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                async_utils::get_all_records_in_collection_async(&pool, &name, &meta).await
+                utils::get_all_records_in_collection_async(&pool, &name, &meta).await
             }),
         )
     }
@@ -330,7 +329,7 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                async_utils::get_records_by_id_async(&pool, &name, &meta, &ids).await
+                utils::get_records_by_id_async(&pool, &name, &meta, &ids).await
             }),
         )
     }
@@ -354,14 +353,9 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                let mut records: Vec<Py<PyAny>> = async_utils::get_partial_records_by_id_async(
-                    &pool,
-                    &name,
-                    &meta,
-                    &vec![id],
-                    &fields,
-                )
-                .await?;
+                let mut records: Vec<Py<PyAny>> =
+                    utils::get_partial_records_by_id_async(&pool, &name, &meta, &vec![id], &fields)
+                        .await?;
                 match records.pop() {
                     None => Python::with_gil(|py| Ok(py.None())),
                     Some(record) => Ok(record),
@@ -387,10 +381,8 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                async_utils::get_all_partial_records_in_collection_async(
-                    &pool, &name, &meta, &fields,
-                )
-                .await
+                utils::get_all_partial_records_in_collection_async(&pool, &name, &meta, &fields)
+                    .await
             }),
         )
     }
@@ -413,8 +405,7 @@ impl AsyncCollection {
             locals.clone(),
             // Store the current locals in task-local data
             asyncio::async_std::scope(locals.clone(), async move {
-                async_utils::get_partial_records_by_id_async(&pool, &name, &meta, &ids, &fields)
-                    .await
+                utils::get_partial_records_by_id_async(&pool, &name, &meta, &ids, &fields).await
             }),
         )
     }
@@ -426,7 +417,7 @@ impl AsyncCollection {
     pub(crate) fn new(
         name: String,
         pool: mobc::Pool<mobc_redis::RedisConnectionManager>,
-        meta: store::CollectionMeta,
+        meta: collections::CollectionMeta,
         default_ttl: Option<u64>,
     ) -> Self {
         Self {

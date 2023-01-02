@@ -1,17 +1,12 @@
 use pyo3::prelude::*;
 
-use async_store::{AsyncCollection, AsyncStore};
-use store::{Collection, Store};
+use asyncio::store::{AsyncCollection, AsyncStore};
+use syncio::store::{Collection, Store};
 
-mod async_store;
-mod async_utils;
+mod asyncio;
 mod external;
-mod field_types;
-mod macros;
-mod parsers;
-mod schema;
-mod store;
-mod utils;
+mod shared;
+mod syncio;
 
 /// A Python module implemented in Rust.
 #[pymodule]

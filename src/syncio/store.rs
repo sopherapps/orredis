@@ -10,8 +10,10 @@ use pyo3::exceptions::{PyConnectionError, PyKeyError};
 use pyo3::prelude::*;
 use pyo3::types::PyType;
 
-use crate::schema::Schema;
-use crate::utils;
+use crate::shared;
+use crate::shared::collections::CollectionMeta;
+use crate::shared::schema::Schema;
+use crate::syncio::utils;
 
 #[pyclass(subclass)]
 pub(crate) struct Store {
@@ -21,15 +23,6 @@ pub(crate) struct Store {
     pool: r2d2::Pool<redis::Client>,
     default_ttl: Option<u64>,
     is_in_use: bool,
-}
-
-#[derive(Clone)]
-#[pyclass(subclass)]
-pub(crate) struct CollectionMeta {
-    pub(crate) schema: Box<Schema>,
-    pub(crate) model_type: Py<PyType>,
-    pub(crate) primary_key_field: String,
-    pub(crate) nested_fields: Vec<String>,
 }
 
 #[pymethods]
@@ -147,23 +140,6 @@ impl Store {
     }
 }
 
-impl CollectionMeta {
-    /// Instantiates a new collection meta
-    pub(crate) fn new(
-        schema: Box<Schema>,
-        model_type: Py<PyType>,
-        primary_key_field: String,
-        nested_fields: Vec<String>,
-    ) -> Self {
-        CollectionMeta {
-            schema,
-            model_type,
-            primary_key_field,
-            nested_fields,
-        }
-    }
-}
-
 #[pyclass(subclass)]
 pub(crate) struct Collection {
     pub(crate) name: String,
@@ -176,7 +152,7 @@ pub(crate) struct Collection {
 impl Collection {
     /// inserts one model instance into the redis store for this collection
     pub(crate) fn add_one(&self, item: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
-        let records = utils::prepare_record_to_insert(
+        let records = shared::utils::prepare_record_to_insert(
             &self.name,
             &self.meta.schema,
             &item,
@@ -195,7 +171,7 @@ impl Collection {
     pub(crate) fn add_many(&self, items: Vec<Py<PyAny>>, ttl: Option<u64>) -> PyResult<()> {
         let mut records: Vec<(String, Vec<(String, String)>)> = Vec::with_capacity(2 * items.len());
         for item in items {
-            let mut records_to_insert = utils::prepare_record_to_insert(
+            let mut records_to_insert = shared::utils::prepare_record_to_insert(
                 &self.name,
                 &self.meta.schema,
                 &item,
@@ -215,7 +191,7 @@ impl Collection {
 
     /// Updates the record of the given id with the provided data
     pub(crate) fn update_one(&self, id: &str, data: Py<PyAny>, ttl: Option<u64>) -> PyResult<()> {
-        let records = utils::prepare_record_to_insert(
+        let records = shared::utils::prepare_record_to_insert(
             &self.name,
             &self.meta.schema,
             &data,
@@ -235,7 +211,7 @@ impl Collection {
     pub(crate) fn delete_many(&self, ids: Vec<String>) -> PyResult<()> {
         let primary_keys: Vec<String> = ids
             .iter()
-            .map(|id| utils::generate_hash_key(&self.name, id))
+            .map(|id| shared::utils::generate_hash_key(&self.name, id))
             .collect();
         utils::remove_records(&self.pool, &primary_keys)
     }

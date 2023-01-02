@@ -2,7 +2,8 @@ use std::str::FromStr;
 
 use chrono::{NaiveDate, TimeZone, Utc};
 use pyo3::exceptions::PyValueError;
-use pyo3::PyResult;
+use pyo3::types::{timezone_utc, PyDate, PyDateTime};
+use pyo3::{Py, PyAny, PyResult, Python};
 use redis::FromRedisValue;
 
 /// Parses datetime strings into timestamps using the "%Y-%m-%d %H:%M:%S.6%f%:z" format which was the default format
@@ -65,4 +66,20 @@ where
 {
     data.parse::<T>()
         .map_err(|e| PyValueError::new_err(e.to_string()))
+}
+
+/// Converts a timestamp into a python date/datetime
+pub(crate) fn timestamp_to_py_date(timestamp: i64) -> PyResult<Py<PyAny>> {
+    Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+        let v = PyDate::from_timestamp(py, timestamp)?;
+        Ok(Py::from(v))
+    })
+}
+
+/// Converts a timestamp into a python date/datetime
+pub(crate) fn timestamp_to_py_datetime(timestamp: i64) -> PyResult<Py<PyAny>> {
+    Python::with_gil(|py| -> PyResult<Py<PyAny>> {
+        let v = PyDateTime::from_timestamp(py, timestamp as f64, Some(timezone_utc(py)))?;
+        Ok(Py::from(v))
+    })
 }
