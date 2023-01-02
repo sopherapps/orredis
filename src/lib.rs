@@ -7,6 +7,7 @@ mod async_store;
 mod async_utils;
 mod asyncio;
 mod field_types;
+mod macros;
 mod mobc_redis;
 mod parsers;
 mod schema;

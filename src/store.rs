@@ -35,6 +35,7 @@ pub(crate) struct CollectionMeta {
 #[pymethods]
 impl Store {
     /// Initializes the Store
+    /// FIXME: Probably change max_lifetime to something more intuitive like `max_pool_lifetime`
     #[args(
         url,
         pool_size = 5,

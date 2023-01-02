@@ -1,11 +1,14 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
+use std::hash::Hash;
 use std::ops::DerefMut;
 
-use pyo3::exceptions::{PyConnectionError, PyKeyError, PyValueError};
+use pyo3::exceptions::PyConnectionError;
 use pyo3::prelude::*;
 use pyo3::types::{timezone_utc, IntoPyDict, PyDate, PyDateTime};
 
 use crate::field_types::FieldType;
+use crate::macros::{py_key_error, py_value_error};
 use crate::parsers::redis_to_py;
 use crate::schema::Schema;
 use crate::store::CollectionMeta;
@@ -14,18 +17,6 @@ const SELECT_SOME_FIELDS_FOR_ALL_IDS_SCRIPT: &str = r"local filtered = {} local 
 const SELECT_ALL_FIELDS_FOR_ALL_IDS_SCRIPT: &str = r"local filtered = {} local cursor = '0' local nested_fields = {} for i, key in ipairs(ARGV) do if i > 1 then nested_fields[key] = true end end repeat local result = redis.call('SCAN', cursor, 'MATCH', ARGV[1]) for _, key in ipairs(result[2]) do if redis.call('TYPE', key).ok == 'hash' then local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(filtered, parent) end end cursor = result[1] until (cursor == '0') return filtered";
 const SELECT_ALL_FIELDS_FOR_SOME_IDS_SCRIPT: &str = r"local result = {} local nested_fields = {} for _, key in ipairs(ARGV) do nested_fields[key] = true end for _, key in ipairs(KEYS) do local parent = redis.call('HGETALL', key) for i, k in ipairs(parent) do if nested_fields[k] then local nested = redis.call('HGETALL', parent[i + 1]) parent[i + 1] = nested end end table.insert(result, parent) end return result";
 const SELECT_SOME_FIELDS_FOR_SOME_IDS_SCRIPT: &str = r"local result = {} local table_unpack = table.unpack or unpack local columns = { } local nested_columns = {} local args_tracker = {} for i, k in ipairs(ARGV) do if args_tracker[k] then nested_columns[k] = true else table.insert(columns, k) args_tracker[k] = true end end for _, key in ipairs(KEYS) do local data = redis.call('HMGET', key, table_unpack(columns)) local parsed_data = {} for i, v in ipairs(data) do if v then table.insert(parsed_data, columns[i]) if nested_columns[columns[i]] then v = redis.call('HGETALL', v) end table.insert(parsed_data, v) end end table.insert(result, parsed_data) end return result";
-
-macro_rules! py_value_error {
-    ($v:expr, $det:expr) => {
-        PyValueError::new_err(format!("{:?} (value was {:?})", $det, $v))
-    };
-}
-
-macro_rules! py_key_error {
-    ($v:expr, $det:expr) => {
-        PyKeyError::new_err(format!("{:?} (key was {:?})", $det, $v))
-    };
-}
 
 /// Inserts the (primary key, record) tuples passed to it in a batch into the redis store
 pub(crate) fn insert_records(
@@ -330,4 +321,18 @@ pub(crate) fn timestamp_to_py_datetime(timestamp: i64) -> PyResult<Py<PyAny>> {
         let v = PyDateTime::from_timestamp(py, timestamp as f64, Some(timezone_utc(py)))?;
         Ok(Py::from(v))
     })
+}
+
+/// Tries to get a value from a given map so as to return an owned value
+/// or an python error
+#[inline(always)]
+pub(crate) fn try_get<K, V>(data: &HashMap<K, V>, key: &K, msg: &str) -> PyResult<V>
+where
+    K: Hash + Eq + Debug,
+    V: Clone,
+{
+    match data.get(&key) {
+        Some(k) => Ok(k.clone()),
+        None => Err(py_key_error!(&key, msg)),
+    }
 }
