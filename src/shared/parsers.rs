@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::str::FromStr;
 
 use chrono::{NaiveDate, TimeZone, Utc};
 use pyo3::exceptions::PyValueError;
+use pyo3::prelude::*;
 use pyo3::types::{timezone_utc, PyDate, PyDateTime};
-use pyo3::{Py, PyAny, PyResult, Python};
-use redis::FromRedisValue;
+use redis::{FromRedisValue, Value};
+
+use crate::shared::collections::CollectionMeta;
+use crate::shared::macros::{py_key_error, py_value_error};
 
 /// Parses datetime strings into timestamps using the "%Y-%m-%d %H:%M:%S.6%f%:z" format which was the default format
 /// on my PC :-) for UTC times
@@ -82,4 +86,52 @@ pub(crate) fn timestamp_to_py_datetime(timestamp: i64) -> PyResult<Py<PyAny>> {
         let v = PyDateTime::from_timestamp(py, timestamp as f64, Some(timezone_utc(py)))?;
         Ok(Py::from(v))
     })
+}
+
+/// Parses the response got from redis lua scripts i.e. a list of lists,
+/// Converting it into a list of py values
+pub(crate) fn parse_lua_script_response<F>(
+    meta: &CollectionMeta,
+    item_parser: F,
+    result: Value,
+) -> PyResult<Vec<Py<PyAny>>>
+where
+    F: FnOnce(HashMap<String, Py<PyAny>>) -> PyResult<Py<PyAny>> + Copy,
+{
+    let results = result
+        .as_sequence()
+        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
+        .get(0)
+        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
+        .as_sequence()
+        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
+
+    let empty_value = redis::Value::Bulk(vec![]);
+    let mut list_of_results: Vec<Py<PyAny>> = Vec::with_capacity(results.len());
+
+    for item in results {
+        if *item != empty_value {
+            match item.as_map_iter() {
+                None => return Err(py_value_error!(item, "redis value is not a map")),
+                Some(item) => {
+                    let data = item
+                        .map(|(k, v)| {
+                            let key = redis_to_py::<String>(k)?;
+                            let value = match meta.schema.get_type(&key) {
+                                Some(field_type) => field_type.redis_to_py(v),
+                                None => {
+                                    Err(py_key_error!(&key, "key found in data but not in schema"))
+                                }
+                            }?;
+                            Ok((key, value))
+                        })
+                        .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
+                    let data = item_parser(data)?;
+                    list_of_results.push(data);
+                }
+            }
+        }
+    }
+
+    Ok(list_of_results)
 }

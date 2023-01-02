@@ -8,8 +8,7 @@ use redis::aio::Connection;
 use crate::external::mobc_redis;
 use crate::shared;
 use crate::shared::collections::CollectionMeta;
-use crate::shared::macros::{py_key_error, py_value_error};
-use crate::shared::parsers::redis_to_py;
+use crate::shared::parsers;
 
 /// Inserts the (primary key, record) tuples passed to it in a batch into the redis store
 pub(crate) async fn insert_records_async(
@@ -193,40 +192,5 @@ where
         .await
         .or_else(|e| Err(PyConnectionError::new_err(e.to_string())))?;
 
-    let results = result
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .get(0)
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?
-        .as_sequence()
-        .ok_or_else(|| py_value_error!(result, "Response from redis is of unexpected shape"))?;
-
-    let empty_value = redis::Value::Bulk(vec![]);
-    let mut list_of_results: Vec<Py<PyAny>> = Vec::with_capacity(results.len());
-
-    for item in results {
-        if *item != empty_value {
-            match item.as_map_iter() {
-                None => return Err(py_value_error!(item, "redis value is not a map")),
-                Some(item) => {
-                    let data = item
-                        .map(|(k, v)| {
-                            let key = redis_to_py::<String>(k)?;
-                            let value = match meta.schema.get_type(&key) {
-                                Some(field_type) => field_type.redis_to_py(v),
-                                None => {
-                                    Err(py_key_error!(&key, "key found in data but not in schema"))
-                                }
-                            }?;
-                            Ok((key, value))
-                        })
-                        .collect::<PyResult<HashMap<String, Py<PyAny>>>>()?;
-                    let data = item_parser(data)?;
-                    list_of_results.push(data);
-                }
-            }
-        }
-    }
-
-    Ok(list_of_results)
+    parsers::parse_lua_script_response(meta, item_parser, result)
 }
