@@ -5,8 +5,6 @@ use std::{
     task::{Context, Poll},
 };
 
-use crate::asyncio::err::RustPanic;
-use crate::asyncio::{call_soon_threadsafe, create_future, dump_err, TaskLocals};
 use futures::{
     channel::{mpsc, oneshot},
     SinkExt,
@@ -14,6 +12,9 @@ use futures::{
 use once_cell::sync::OnceCell;
 use pin_project_lite::pin_project;
 use pyo3::prelude::*;
+
+use crate::external::asyncio::err::RustPanic;
+use crate::external::asyncio::{call_soon_threadsafe, create_future, dump_err, TaskLocals};
 
 /// Generic utilities for a JoinError
 pub trait JoinError {

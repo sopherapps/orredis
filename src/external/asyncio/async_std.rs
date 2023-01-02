@@ -1,12 +1,13 @@
 use std::{any::Any, cell::RefCell, future::Future, panic::AssertUnwindSafe, pin::Pin};
 
-use crate::asyncio::{
-    generic::{self, ContextExt, JoinError, LocalContextExt, Runtime, SpawnLocalExt},
-    TaskLocals,
-};
 use async_std::task;
 use futures::FutureExt;
 use pyo3::prelude::*;
+
+use crate::external::asyncio::{
+    generic::{self, ContextExt, JoinError, LocalContextExt, Runtime, SpawnLocalExt},
+    TaskLocals,
+};
 
 struct AsyncStdJoinErr(Box<dyn Any + Send + 'static>);
 

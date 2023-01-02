@@ -7,8 +7,9 @@ use pyo3::prelude::*;
 use pyo3::types::PyType;
 use redis::aio::Connection;
 
+use crate::external::{asyncio, mobc_redis};
 use crate::schema::Schema;
-use crate::{async_utils, asyncio, mobc_redis, store, utils};
+use crate::{async_utils, store, utils};
 
 #[pyclass(subclass)]
 pub(crate) struct AsyncStore {
