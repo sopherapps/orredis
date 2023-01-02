@@ -8,7 +8,7 @@ use pyo3::types::PyType;
 use redis::aio::Connection;
 
 use crate::asyncio::utils;
-use crate::external::{asyncio, mobc_redis};
+use crate::external::mobc_redis;
 use crate::shared::collections;
 use crate::shared::schema::Schema;
 use crate::shared::utils::{generate_hash_key, prepare_record_to_insert};
@@ -70,14 +70,14 @@ impl AsyncStore {
     #[args(asynchronous = "false")]
     #[pyo3(text_signature = "($self, asynchronous)")]
     pub fn clear<'a>(&mut self, py: Python<'a>, asynchronous: bool) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let mut conn = pool
                     .get()
                     .await
@@ -165,18 +165,18 @@ impl AsyncCollection {
         item: Py<PyAny>,
         ttl: Option<u64>,
     ) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let name = self.name.clone();
         let schema = self.meta.schema.clone();
         let pk_field = self.meta.primary_key_field.clone();
         let default_ttl = self.default_ttl.clone();
         let pool = self.pool.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let records = prepare_record_to_insert(&name, &schema, &item, &pk_field, None)?;
                 let ttl = match ttl {
                     None => default_ttl,
@@ -195,18 +195,18 @@ impl AsyncCollection {
         items: Vec<Py<PyAny>>,
         ttl: Option<u64>,
     ) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let name = self.name.clone();
         let schema = self.meta.schema.clone();
         let pk_field = self.meta.primary_key_field.clone();
         let default_ttl = self.default_ttl.clone();
         let pool = self.pool.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let mut records: Vec<(String, Vec<(String, String)>)> =
                     Vec::with_capacity(2 * items.len());
                 for item in items {
@@ -233,7 +233,7 @@ impl AsyncCollection {
         data: Py<PyAny>,
         ttl: Option<u64>,
     ) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let name = self.name.clone();
         let schema = self.meta.schema.clone();
         let pk_field = self.meta.primary_key_field.clone();
@@ -241,11 +241,11 @@ impl AsyncCollection {
         let pool = self.pool.clone();
         let id = id.to_owned();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let records =
                     prepare_record_to_insert(&name, &schema, &data, &pk_field, Some(&id))?;
 
@@ -261,15 +261,15 @@ impl AsyncCollection {
 
     /// Deletes the records that correspond to the given ids for this collection
     pub(crate) fn delete_many<'a>(&self, py: Python<'a>, ids: Vec<String>) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let name = self.name.clone();
         let pool = self.pool.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let primary_keys: Vec<String> =
                     ids.iter().map(|id| generate_hash_key(&name, id)).collect();
                 utils::remove_records_async(&pool, &primary_keys).await
@@ -279,17 +279,17 @@ impl AsyncCollection {
 
     /// Gets the record that corresponds to the given id
     pub(crate) fn get_one<'a>(&self, py: Python<'a>, id: &str) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
         let name = self.name.clone();
         let meta = self.meta.clone();
         let id = id.to_owned();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let mut records: Vec<Py<PyAny>> =
                     utils::get_records_by_id_async(&pool, &name, &meta, &vec![id]).await?;
                 match records.pop() {
@@ -302,16 +302,16 @@ impl AsyncCollection {
 
     /// Returns all the records found in this collection; returning them as models
     pub(crate) fn get_all<'a>(&self, py: Python<'a>) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
         let name = self.name.clone();
         let meta = self.meta.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 utils::get_all_records_in_collection_async(&pool, &name, &meta).await
             }),
         )
@@ -319,16 +319,16 @@ impl AsyncCollection {
 
     /// Returns the records whose ids are as given for this collection
     pub(crate) fn get_many<'a>(&self, py: Python<'a>, ids: Vec<String>) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
         let name = self.name.clone();
         let meta = self.meta.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 utils::get_records_by_id_async(&pool, &name, &meta, &ids).await
             }),
         )
@@ -342,17 +342,17 @@ impl AsyncCollection {
         id: &str,
         fields: Vec<String>,
     ) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
         let name = self.name.clone();
         let meta = self.meta.clone();
         let id = id.to_owned();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 let mut records: Vec<Py<PyAny>> =
                     utils::get_partial_records_by_id_async(&pool, &name, &meta, &vec![id], &fields)
                         .await?;
@@ -371,16 +371,16 @@ impl AsyncCollection {
         py: Python<'a>,
         fields: Vec<String>,
     ) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
         let name = self.name.clone();
         let meta = self.meta.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 utils::get_all_partial_records_in_collection_async(&pool, &name, &meta, &fields)
                     .await
             }),
@@ -395,16 +395,16 @@ impl AsyncCollection {
         ids: Vec<String>,
         fields: Vec<String>,
     ) -> PyResult<&'a PyAny> {
-        let locals = asyncio::async_std::get_current_locals(py)?;
+        let locals = pyo3_asyncio::async_std::get_current_locals(py)?;
         let pool = self.pool.clone();
         let name = self.name.clone();
         let meta = self.meta.clone();
 
-        asyncio::async_std::future_into_py_with_locals(
+        pyo3_asyncio::async_std::future_into_py_with_locals(
             py,
             locals.clone(),
             // Store the current locals in task-local data
-            asyncio::async_std::scope(locals.clone(), async move {
+            pyo3_asyncio::async_std::scope(locals.clone(), async move {
                 utils::get_partial_records_by_id_async(&pool, &name, &meta, &ids, &fields).await
             }),
         )

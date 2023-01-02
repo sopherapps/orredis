@@ -510,7 +510,7 @@ on under the hood.
 
 ## Acknowledgement
 
-- The asyncio module code was adapted from [pyo3-asyncio](https://github.com/awestlake87/pyo3-asyncio)
+- The asyncio was possible with [pyo3-asyncio](https://github.com/awestlake87/pyo3-asyncio)
 - The python-rust bindings were got from [the pyo3 project](https://github.com/PyO3)
 
 ## License
